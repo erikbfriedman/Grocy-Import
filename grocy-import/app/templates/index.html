@@ -212,6 +212,52 @@
         .log-placeholder { color: var(--text-muted); font-style: italic; }
 
         #csvFile { display: none; }
+
+        /* Defaults bar */
+        .defaults-bar {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 6px 14px;
+            background: rgba(3, 169, 244, 0.07);
+            border-bottom: 1px solid rgba(3, 169, 244, 0.18);
+            flex-shrink: 0;
+            flex-wrap: wrap;
+        }
+        .defaults-bar-label {
+            font-size: 10px;
+            font-weight: 700;
+            color: var(--primary);
+            text-transform: uppercase;
+            letter-spacing: 0.06em;
+            white-space: nowrap;
+            flex-shrink: 0;
+        }
+        .defaults-fields {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            flex: 1;
+        }
+        .default-field {
+            display: flex;
+            align-items: center;
+            gap: 4px;
+        }
+        .default-field label {
+            font-size: 11px;
+            color: var(--text-muted);
+            white-space: nowrap;
+        }
+        .default-field select {
+            background: var(--surface2);
+            color: var(--text);
+            border: 1px solid var(--border);
+            border-radius: 4px;
+            padding: 3px 8px;
+            font-size: 11px;
+            max-width: 150px;
+        }
     </style>
 </head>
 <body>
@@ -243,6 +289,12 @@
         <span class="status" id="statusBadge"></span>
     </div>
 
+    <div class="defaults-bar" id="defaultsBar" style="display:none">
+        <span class="defaults-bar-label">Defaults</span>
+        <div class="defaults-fields" id="defaultsFields"></div>
+        <button class="btn" style="flex-shrink:0" onclick="clearDefaults()">Clear</button>
+    </div>
+
     <div class="main">
         <div id="configNotice" class="notice" style="display:none">
             &#9888; Grocy is not configured. Go to the add-on <strong>Configuration</strong> tab and set your Grocy URL and API key.
@@ -264,6 +316,7 @@
         let currentFieldSources = {};
         let currentEntity = document.getElementById('entitySelect').value;
         let suppressAutoSave = false;
+        let currentDefaults = {};
 
         const saveTimers = {};
         let autosaveFadeTimer = null;
@@ -303,6 +356,7 @@
                 const lookups = await lookupsResp.json();
                 currentCols = schema.columns;
                 currentFieldSources = lookups;
+                renderDefaultsBar(currentCols, lookups);
                 buildSheet(currentCols, withData ? schema.data : [], lookups);
                 if (withData) {
                     setStatus(`${schema.data.length} records loaded`, 'ok');
@@ -317,6 +371,47 @@
         }
 
         async function loadExisting() { await loadSchema(true); }
+
+        // ── Defaults bar ─────────────────────────────────────────────────────
+
+        function renderDefaultsBar(columns, fieldSources) {
+            const fkCols = columns.filter(c => c !== 'id' && fieldSources[c]);
+            const bar    = document.getElementById('defaultsBar');
+            const fields = document.getElementById('defaultsFields');
+
+            if (fkCols.length === 0) { bar.style.display = 'none'; return; }
+
+            currentDefaults = {};
+            fields.innerHTML = '';
+
+            fkCols.forEach(col => {
+                const source = fieldSources[col];
+                const wrap   = document.createElement('div');
+                wrap.className = 'default-field';
+
+                const lbl = document.createElement('label');
+                lbl.textContent = col;
+
+                const sel = document.createElement('select');
+                sel.innerHTML = `<option value="">any</option>` +
+                    source.map(s => `<option value="${s.id}">${s.name}</option>`).join('');
+                sel.onchange = () => {
+                    if (sel.value) currentDefaults[col] = sel.value;
+                    else delete currentDefaults[col];
+                };
+
+                wrap.appendChild(lbl);
+                wrap.appendChild(sel);
+                fields.appendChild(wrap);
+            });
+
+            bar.style.display = 'flex';
+        }
+
+        function clearDefaults() {
+            currentDefaults = {};
+            document.querySelectorAll('#defaultsFields select').forEach(s => s.value = '');
+        }
 
         // ── Build spreadsheet ────────────────────────────────────────────────
 
@@ -415,6 +510,13 @@
             const keys = Object.keys(obj);
             if (keys.length === 0) return;
             if (keys.length === 1 && keys[0] === 'id') return;
+
+            // For new rows, merge defaults into any empty FK fields
+            if (!obj.id) {
+                Object.entries(currentDefaults).forEach(([col, val]) => {
+                    if (!obj[col]) obj[col] = val;
+                });
+            }
 
             showAutosave('saving', 'saving…');
             try {
