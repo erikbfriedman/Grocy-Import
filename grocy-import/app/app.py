@@ -69,6 +69,24 @@ DEFAULT_COLUMNS = {
     ],
 }
 
+# Maps FK field names to the entity they reference and which field to use as the display label
+LINKED_FIELDS = {
+    'location_id':                        {'entity': 'locations',       'label': 'name'},
+    'product_group_id':                   {'entity': 'product_groups',  'label': 'name'},
+    'quantity_unit_id_purchase':          {'entity': 'quantity_units',  'label': 'name'},
+    'quantity_unit_id_stock':             {'entity': 'quantity_units',  'label': 'name'},
+    'product_id':                         {'entity': 'products',        'label': 'name'},
+    'qu_id':                              {'entity': 'quantity_units',  'label': 'name'},
+    'recipe_id':                          {'entity': 'recipes',         'label': 'name'},
+    'category_id':                        {'entity': 'task_categories', 'label': 'name'},
+    'assigned_to_user_id':                {'entity': 'users',           'label': 'display_name'},
+    'next_execution_assigned_to_user_id': {'entity': 'users',           'label': 'display_name'},
+    'shopping_list_id':                   {'entity': 'shopping_lists',  'label': 'name'},
+    'from_qu_id':                         {'entity': 'quantity_units',  'label': 'name'},
+    'to_qu_id':                           {'entity': 'quantity_units',  'label': 'name'},
+    'product_qu_id':                      {'entity': 'quantity_units',  'label': 'name'},
+}
+
 
 def grocy_headers():
     return {
@@ -122,6 +140,41 @@ def get_schema(entity):
             pass
 
     return jsonify({'columns': columns, 'data': data})
+
+
+@app.route('/api/lookups')
+def get_lookups():
+    """Returns dropdown source arrays for all FK fields, keyed by field name."""
+    if not (GROCY_URL and GROCY_API_KEY):
+        return jsonify({})
+
+    # Fetch each unique referenced entity once
+    entity_rows = {}
+    for info in LINKED_FIELDS.values():
+        entity = info['entity']
+        if entity in entity_rows:
+            continue
+        try:
+            api_path = '/api/users' if entity == 'users' else f'/api/objects/{entity}'
+            resp = requests.get(f"{GROCY_URL}{api_path}", headers=grocy_headers(), timeout=10)
+            entity_rows[entity] = resp.json() if resp.ok else []
+        except Exception:
+            entity_rows[entity] = []
+
+    # Build per-field source arrays: [{id: str, name: str}]
+    field_sources = {}
+    for field, info in LINKED_FIELDS.items():
+        rows = entity_rows.get(info['entity'], [])
+        if rows:
+            field_sources[field] = [
+                {
+                    'id': str(row['id']),
+                    'name': str(row.get(info['label']) or row.get('name') or row['id']),
+                }
+                for row in rows if row.get('id') is not None
+            ]
+
+    return jsonify(field_sources)
 
 
 @app.route('/api/import/<entity>', methods=['POST'])

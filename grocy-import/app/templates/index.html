@@ -48,13 +48,7 @@
             white-space: nowrap;
             margin-right: 4px;
         }
-        .sep {
-            width: 1px;
-            height: 22px;
-            background: var(--border);
-            margin: 0 2px;
-            flex-shrink: 0;
-        }
+        .sep { width: 1px; height: 22px; background: var(--border); margin: 0 2px; flex-shrink: 0; }
 
         select {
             background: var(--surface2);
@@ -106,6 +100,21 @@
         .status.ok { color: var(--success); }
         .status.error { color: var(--error); }
         .status.loading { color: var(--warning); }
+
+        .autosave-badge {
+            font-size: 10px;
+            padding: 2px 7px;
+            border-radius: 10px;
+            font-weight: 600;
+            opacity: 0;
+            transition: opacity 0.3s;
+            background: var(--success);
+            color: #fff;
+            flex-shrink: 0;
+        }
+        .autosave-badge.visible { opacity: 1; }
+        .autosave-badge.error { background: var(--error); }
+        .autosave-badge.saving { background: var(--warning); }
 
         .main {
             flex: 1;
@@ -170,10 +179,23 @@
             background: rgba(3, 169, 244, 0.18) !important;
         }
         .jexcel_corner { background: var(--surface2) !important; border-color: var(--border) !important; }
-        .jexcel_freeze { background: var(--surface2) !important; }
+
+        /* dropdown picker dark theme */
+        .jdropdown-container {
+            background: var(--surface2) !important;
+            border-color: var(--border) !important;
+            color: var(--text) !important;
+        }
+        .jdropdown-item:hover { background: rgba(3,169,244,0.2) !important; }
+        .jdropdown-item.selected { background: rgba(3,169,244,0.3) !important; }
+        .jdropdown-search input {
+            background: var(--bg) !important;
+            color: var(--text) !important;
+            border-color: var(--border) !important;
+        }
 
         .log-panel {
-            height: 110px;
+            height: 100px;
             overflow-y: auto;
             background: var(--surface);
             border: 1px solid var(--border);
@@ -204,7 +226,7 @@
 
         <div class="sep"></div>
 
-        <button class="btn" onclick="loadExisting()" title="Load all current records from Grocy">Load Existing</button>
+        <button class="btn" onclick="loadExisting()">Load Existing</button>
         <button class="btn" onclick="addRows(10)">+ 10 Rows</button>
         <button class="btn" onclick="clearGrid()">Clear</button>
 
@@ -216,8 +238,8 @@
 
         <div class="sep"></div>
 
-        <button class="btn btn-primary" onclick="importData()">Import &rarr;</button>
-
+        <button class="btn btn-primary" onclick="importAll()">Import All &rarr;</button>
+        <span class="autosave-badge" id="autosaveBadge">saved</span>
         <span class="status" id="statusBadge"></span>
     </div>
 
@@ -229,58 +251,76 @@
             <div id="spreadsheet"></div>
         </div>
         <div class="log-panel" id="logPanel">
-            <div class="log-placeholder">Import results will appear here.</div>
+            <div class="log-placeholder">Changes are saved automatically. Import log appears here.</div>
         </div>
     </div>
 
     <script>
         const BASE = '{{ ingress_path | safe }}';
+        function url(path) { return BASE + path; }
+
         let sheet = null;
         let currentCols = [];
+        let currentFieldSources = {};
         let currentEntity = document.getElementById('entitySelect').value;
+        let suppressAutoSave = false;
 
-        function url(path) {
-            return BASE + path;
-        }
+        const saveTimers = {};
+        let autosaveFadeTimer = null;
+
+        // ── Boot ────────────────────────────────────────────────────────────
+
+        checkConfig();
+        loadSchema(false);
+
+        // ── Config check ────────────────────────────────────────────────────
 
         async function checkConfig() {
             try {
                 const r = await fetch(url('/api/config'));
                 const cfg = await r.json();
                 document.getElementById('configNotice').style.display = cfg.configured ? 'none' : 'flex';
-                return cfg.configured;
-            } catch { return false; }
+            } catch {}
         }
+
+        // ── Entity change ───────────────────────────────────────────────────
 
         async function onEntityChange() {
             currentEntity = document.getElementById('entitySelect').value;
             await loadSchema(false);
         }
 
+        // ── Schema + lookups ────────────────────────────────────────────────
+
         async function loadSchema(withData) {
             setStatus('Loading…', 'loading');
             try {
-                const r = await fetch(url(`/api/schema/${currentEntity}?withData=${withData ? '1' : '0'}`));
-                const result = await r.json();
-                currentCols = result.columns;
-                buildSheet(currentCols, withData ? result.data : []);
+                const [schemaResp, lookupsResp] = await Promise.all([
+                    fetch(url(`/api/schema/${currentEntity}?withData=${withData ? '1' : '0'}`)),
+                    fetch(url('/api/lookups')),
+                ]);
+                const schema  = await schemaResp.json();
+                const lookups = await lookupsResp.json();
+                currentCols = schema.columns;
+                currentFieldSources = lookups;
+                buildSheet(currentCols, withData ? schema.data : [], lookups);
                 if (withData) {
-                    setStatus(`${result.data.length} records loaded`, 'ok');
-                    log(`Loaded ${result.data.length} existing ${currentEntity} records`, 'info');
+                    setStatus(`${schema.data.length} records loaded`, 'ok');
+                    log(`Loaded ${schema.data.length} existing ${currentEntity} records`, 'info');
                 } else {
                     setStatus('Ready', '');
                 }
             } catch (e) {
-                setStatus('Schema load failed', 'error');
-                log('Schema load error: ' + e.message, 'error');
+                setStatus('Load failed', 'error');
+                log('Load error: ' + e.message, 'error');
             }
         }
 
-        async function loadExisting() {
-            await loadSchema(true);
-        }
+        async function loadExisting() { await loadSchema(true); }
 
-        function buildSheet(columns, data) {
+        // ── Build spreadsheet ────────────────────────────────────────────────
+
+        function buildSheet(columns, data, fieldSources) {
             const el = document.getElementById('spreadsheet');
             if (sheet) {
                 try { jspreadsheet.destroy(el); } catch (e) {}
@@ -288,15 +328,21 @@
                 sheet = null;
             }
 
-            const colDefs = columns.map(col => ({
-                type: 'text',
-                title: col,
-                width: col === 'id' ? 55
-                     : col.includes('description') || col.includes('note') ? 240
-                     : col.includes('name') ? 200
-                     : 150,
-                readOnly: col === 'id',
-            }));
+            const colDefs = columns.map(col => {
+                const source = fieldSources[col];
+                return {
+                    type:     source ? 'dropdown' : 'text',
+                    title:    col,
+                    source:   source || undefined,
+                    width:    col === 'id' ? 55
+                            : source ? 200
+                            : col.includes('description') || col.includes('note') ? 240
+                            : col.includes('name') ? 200
+                            : 150,
+                    readOnly: col === 'id',
+                    autocomplete: source ? true : undefined,
+                };
+            });
 
             let tableData;
             if (data && data.length > 0) {
@@ -306,15 +352,16 @@
                         return v === null || v === undefined ? '' : String(v);
                     })
                 );
-                // Pad to at least 10 blank rows below existing data
-                const blank = Array(10).fill(null).map(() => Array(columns.length).fill(''));
-                tableData = tableData.concat(blank);
+                tableData = tableData.concat(
+                    Array(10).fill(null).map(() => Array(columns.length).fill(''))
+                );
             } else {
                 tableData = Array(50).fill(null).map(() => Array(columns.length).fill(''));
             }
 
             const wrapH = document.querySelector('.grid-wrap').clientHeight;
 
+            suppressAutoSave = true;
             sheet = jspreadsheet(el, {
                 data: tableData,
                 columns: colDefs,
@@ -324,28 +371,109 @@
                 minDimensions: [columns.length, 50],
                 allowInsertColumn: false,
                 allowDeleteColumn: false,
+                onchange: function(instance, cell, x, y, value) {
+                    if (!suppressAutoSave) scheduleRowSave(y);
+                },
                 contextMenu: function(obj, x, y, e, items) {
                     return items.filter(item =>
-                        item && typeof item.title === 'string' &&
-                        /row/i.test(item.title)
+                        item && typeof item.title === 'string' && /row/i.test(item.title)
                     );
                 },
             });
+            suppressAutoSave = false;
         }
+
+        // ── Auto-save on cell commit ─────────────────────────────────────────
+
+        function scheduleRowSave(rowIdx) {
+            clearTimeout(saveTimers[rowIdx]);
+            saveTimers[rowIdx] = setTimeout(() => saveRow(rowIdx), 400);
+        }
+
+        async function saveRow(rowIdx) {
+            const allData = sheet.getData();
+            const rowArr  = allData[rowIdx];
+            if (!rowArr) return;
+
+            const obj = {};
+            currentCols.forEach((col, i) => {
+                const v = rowArr[i];
+                if (v !== '' && v !== null && v !== undefined) obj[col] = v;
+            });
+
+            const keys = Object.keys(obj);
+            // Skip completely empty rows or rows with only an id and no data
+            if (keys.length === 0) return;
+            if (keys.length === 1 && keys[0] === 'id') return;
+
+            showAutosave('saving', 'saving…');
+            try {
+                const resp = await fetch(url(`/api/import/${currentEntity}`), {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ rows: [obj] }),
+                });
+                const result = await resp.json();
+                const r = result.results[0];
+
+                if (r.ok) {
+                    // If this was a new row, write the returned id back into the id cell
+                    if (r.created_id) {
+                        const idColIdx = currentCols.indexOf('id');
+                        if (idColIdx >= 0) {
+                            suppressAutoSave = true;
+                            sheet.setValueFromCoords(idColIdx, rowIdx, r.created_id, true);
+                            suppressAutoSave = false;
+                        }
+                    }
+                    showAutosave('ok', 'saved');
+                    log(`Row ${rowIdx + 1}: ✓ saved${r.created_id ? ' (id=' + r.created_id + ')' : ''}`, 'ok');
+                } else {
+                    showAutosave('error', 'error');
+                    const detail = JSON.stringify(r.response || r.error || '');
+                    log(`Row ${rowIdx + 1}: ✗ ${r.status} — ${detail}`, 'error');
+                }
+            } catch (e) {
+                showAutosave('error', 'error');
+                log(`Row ${rowIdx + 1}: save error — ${e.message}`, 'error');
+            }
+        }
+
+        function showAutosave(type, label) {
+            const badge = document.getElementById('autosaveBadge');
+            badge.textContent = label;
+            badge.className = `autosave-badge visible ${type}`;
+            clearTimeout(autosaveFadeTimer);
+            if (type !== 'saving') {
+                autosaveFadeTimer = setTimeout(() => {
+                    badge.className = 'autosave-badge';
+                }, 2000);
+            }
+        }
+
+        // ── Grid helpers ─────────────────────────────────────────────────────
 
         function clearGrid() {
             if (!sheet) return;
-            const empty = Array(50).fill(null).map(() => Array(currentCols.length).fill(''));
-            sheet.setData(empty);
+            suppressAutoSave = true;
+            sheet.setData(Array(50).fill(null).map(() => Array(currentCols.length).fill('')));
+            suppressAutoSave = false;
             log('Grid cleared', 'info');
             setStatus('Cleared', '');
         }
 
         function addRows(n) {
             if (!sheet) return;
-            const blank = Array(n).fill(null).map(() => Array(currentCols.length).fill(''));
-            sheet.insertRow(blank);
+            suppressAutoSave = true;
+            sheet.insertRow(Array(n).fill(null).map(() => Array(currentCols.length).fill('')));
+            suppressAutoSave = false;
         }
+
+        function downloadCsv() {
+            if (sheet) sheet.download(false);
+        }
+
+        // ── CSV upload ───────────────────────────────────────────────────────
 
         function uploadCsv(event) {
             const file = event.target.files[0];
@@ -355,19 +483,19 @@
                 const lines = e.target.result.trim().split(/\r?\n/);
                 if (!lines.length) return;
                 const headers = parseCsvRow(lines[0]);
-                const rows = lines.slice(1).map(l => parseCsvRow(l));
-                const colMap = headers.map(h => currentCols.indexOf(h.trim()));
+                const rows    = lines.slice(1).map(l => parseCsvRow(l));
+                const colMap  = headers.map(h => currentCols.indexOf(h.trim()));
                 const aligned = rows.map(row => {
                     const out = Array(currentCols.length).fill('');
-                    colMap.forEach((ci, i) => {
-                        if (ci >= 0 && row[i] !== undefined) out[ci] = row[i];
-                    });
+                    colMap.forEach((ci, i) => { if (ci >= 0 && row[i] !== undefined) out[ci] = row[i]; });
                     return out;
                 });
+                suppressAutoSave = true;
                 if (sheet) sheet.setData(aligned);
-                log(`CSV uploaded: ${aligned.length} rows — columns matched: ${headers.filter((h, i) => colMap[i] >= 0).join(', ')}`, 'info');
+                suppressAutoSave = false;
+                log(`CSV uploaded: ${aligned.length} rows`, 'info');
                 const unmatched = headers.filter((h, i) => colMap[i] < 0);
-                if (unmatched.length) log(`Unmatched CSV columns (ignored): ${unmatched.join(', ')}`, 'error');
+                if (unmatched.length) log(`Unmatched columns (ignored): ${unmatched.join(', ')}`, 'error');
             };
             reader.readAsText(file);
             event.target.value = '';
@@ -389,67 +517,54 @@
             return result;
         }
 
-        function downloadCsv() {
-            if (!sheet) return;
-            sheet.download(false);
-        }
+        // ── Bulk import (Import All button) ──────────────────────────────────
 
-        async function importData() {
+        async function importAll() {
             if (!sheet) return;
 
             const data = sheet.getData();
             const rows = [];
-
             data.forEach(row => {
                 const obj = {};
                 currentCols.forEach((col, i) => {
                     const v = row[i];
-                    if (v !== '' && v !== null && v !== undefined) {
-                        obj[col] = v;
-                    }
+                    if (v !== '' && v !== null && v !== undefined) obj[col] = v;
                 });
-                // Skip rows that are empty or have only an id (no actual data)
                 const keys = Object.keys(obj);
-                if (keys.length > 0 && !(keys.length === 1 && keys[0] === 'id')) {
-                    rows.push(obj);
-                }
+                if (keys.length > 0 && !(keys.length === 1 && keys[0] === 'id')) rows.push(obj);
             });
 
-            if (rows.length === 0) {
-                log('Nothing to import — add some data first', 'info');
-                return;
-            }
+            if (rows.length === 0) { log('Nothing to import', 'info'); return; }
 
             clearLog();
             setStatus(`Importing ${rows.length} rows…`, 'loading');
-            log(`Starting import of ${rows.length} rows into ${currentEntity}…`, 'info');
+            log(`Bulk importing ${rows.length} rows into ${currentEntity}…`, 'info');
 
             try {
-                const r = await fetch(url(`/api/import/${currentEntity}`), {
+                const resp = await fetch(url(`/api/import/${currentEntity}`), {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ rows }),
                 });
-                const result = await r.json();
-
+                const result = await resp.json();
                 let ok = 0, errs = 0;
-                result.results.forEach((res, i) => {
-                    if (res.ok) {
+                result.results.forEach((r, i) => {
+                    if (r.ok) {
                         ok++;
-                        const idStr = res.created_id ? ` → id=${res.created_id}` : (res.row.id ? ` (updated id=${res.row.id})` : '');
-                        log(`Row ${i + 1}: ✓ ${res.status}${idStr}`, 'ok');
+                        log(`Row ${i + 1}: ✓ ${r.status}${r.created_id ? ' → id=' + r.created_id : ''}`, 'ok');
                     } else {
                         errs++;
-                        const detail = JSON.stringify(res.response || res.error || '');
-                        log(`Row ${i + 1}: ✗ ${res.status} — ${detail}`, 'error');
+                        log(`Row ${i + 1}: ✗ ${r.status} — ${JSON.stringify(r.response || r.error || '')}`, 'error');
                     }
                 });
                 setStatus(`${ok} imported, ${errs} failed`, errs > 0 ? 'error' : 'ok');
             } catch (e) {
                 setStatus('Request failed', 'error');
-                log('Import request error: ' + e.message, 'error');
+                log('Import error: ' + e.message, 'error');
             }
         }
+
+        // ── UI helpers ───────────────────────────────────────────────────────
 
         function setStatus(msg, type) {
             const el = document.getElementById('statusBadge');
@@ -457,9 +572,7 @@
             el.className = 'status ' + (type || '');
         }
 
-        function clearLog() {
-            document.getElementById('logPanel').innerHTML = '';
-        }
+        function clearLog() { document.getElementById('logPanel').innerHTML = ''; }
 
         function log(msg, type) {
             const panel = document.getElementById('logPanel');
@@ -469,10 +582,6 @@
             panel.appendChild(entry);
             panel.scrollTop = panel.scrollHeight;
         }
-
-        // Boot
-        checkConfig();
-        loadSchema(false);
     </script>
 </body>
 </html>
