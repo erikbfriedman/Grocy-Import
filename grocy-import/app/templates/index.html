@@ -1,0 +1,478 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Grocy Import</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/jsuites@5/dist/jsuites.min.css">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/jspreadsheet-ce@4/dist/jspreadsheet.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/jsuites@5/dist/jsuites.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/jspreadsheet-ce@4/dist/jspreadsheet.min.js"></script>
+    <style>
+        :root {
+            --primary: #03a9f4;
+            --bg: #111827;
+            --surface: #1f2937;
+            --surface2: #374151;
+            --border: #4b5563;
+            --text: #f3f4f6;
+            --text-muted: #9ca3af;
+            --success: #10b981;
+            --error: #ef4444;
+            --warning: #f59e0b;
+        }
+        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+        html, body {
+            height: 100%;
+            font-family: 'Roboto', -apple-system, BlinkMacSystemFont, sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            font-size: 14px;
+        }
+        body { display: flex; flex-direction: column; overflow: hidden; }
+
+        .toolbar {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            padding: 10px 14px;
+            background: var(--surface);
+            border-bottom: 1px solid var(--border);
+            flex-shrink: 0;
+            flex-wrap: wrap;
+        }
+        .toolbar-title {
+            font-size: 15px;
+            font-weight: 600;
+            color: var(--primary);
+            white-space: nowrap;
+            margin-right: 4px;
+        }
+        .sep {
+            width: 1px;
+            height: 22px;
+            background: var(--border);
+            margin: 0 2px;
+            flex-shrink: 0;
+        }
+
+        select {
+            background: var(--surface2);
+            color: var(--text);
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            padding: 5px 10px;
+            font-size: 13px;
+            cursor: pointer;
+            outline: none;
+            max-width: 200px;
+        }
+        select:focus { border-color: var(--primary); }
+
+        .btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+            padding: 5px 12px;
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            font-size: 12px;
+            font-weight: 500;
+            cursor: pointer;
+            white-space: nowrap;
+            background: var(--surface2);
+            color: var(--text-muted);
+            transition: all 0.12s;
+            line-height: 1.5;
+        }
+        .btn:hover:not(:disabled) { color: var(--text); border-color: var(--text-muted); }
+        .btn:disabled { opacity: 0.35; cursor: not-allowed; }
+        .btn-primary {
+            background: var(--primary);
+            color: #fff;
+            border-color: var(--primary);
+            font-size: 13px;
+            padding: 5px 16px;
+        }
+        .btn-primary:hover:not(:disabled) { filter: brightness(1.1); color: #fff; border-color: var(--primary); }
+
+        .status {
+            margin-left: auto;
+            font-size: 11px;
+            color: var(--text-muted);
+            white-space: nowrap;
+            font-family: monospace;
+        }
+        .status.ok { color: var(--success); }
+        .status.error { color: var(--error); }
+        .status.loading { color: var(--warning); }
+
+        .main {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            padding: 10px 12px;
+            gap: 8px;
+        }
+
+        .notice {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px 12px;
+            background: rgba(245, 158, 11, 0.12);
+            border: 1px solid var(--warning);
+            border-radius: 6px;
+            font-size: 12px;
+            color: var(--warning);
+            flex-shrink: 0;
+        }
+
+        .grid-wrap {
+            flex: 1;
+            overflow: hidden;
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            background: var(--surface);
+            min-height: 0;
+        }
+        #spreadsheet { width: 100%; height: 100%; }
+
+        /* jspreadsheet dark theme */
+        .jexcel_content { background: var(--surface) !important; }
+        .jexcel > thead > tr > td {
+            background: var(--surface2) !important;
+            color: var(--text) !important;
+            border-color: var(--border) !important;
+            font-weight: 600 !important;
+            font-size: 11px !important;
+            text-transform: uppercase !important;
+            letter-spacing: 0.03em !important;
+        }
+        .jexcel > tbody > tr > td {
+            background: var(--surface) !important;
+            color: var(--text) !important;
+            border-color: var(--border) !important;
+            font-size: 13px !important;
+        }
+        .jexcel > tbody > tr > td:first-child {
+            background: var(--surface2) !important;
+            color: var(--text-muted) !important;
+        }
+        .jexcel > tbody > tr > td.readonly {
+            background: rgba(55, 65, 81, 0.6) !important;
+            color: var(--text-muted) !important;
+            font-style: italic !important;
+        }
+        .jexcel > tbody > tr > td.highlight,
+        .jexcel > tbody > tr > td.selected {
+            background: rgba(3, 169, 244, 0.18) !important;
+        }
+        .jexcel_corner { background: var(--surface2) !important; border-color: var(--border) !important; }
+        .jexcel_freeze { background: var(--surface2) !important; }
+
+        .log-panel {
+            height: 110px;
+            overflow-y: auto;
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            padding: 6px 10px;
+            font-family: 'Courier New', monospace;
+            font-size: 11px;
+            flex-shrink: 0;
+        }
+        .log-entry { padding: 1px 0; line-height: 1.6; }
+        .log-entry.ok { color: var(--success); }
+        .log-entry.error { color: var(--error); }
+        .log-entry.info { color: var(--text-muted); }
+        .log-placeholder { color: var(--text-muted); font-style: italic; }
+
+        #csvFile { display: none; }
+    </style>
+</head>
+<body>
+    <div class="toolbar">
+        <span class="toolbar-title">Grocy Import</span>
+
+        <select id="entitySelect" onchange="onEntityChange()">
+            {% for key, label in entities.items() %}
+            <option value="{{ key }}">{{ label }}</option>
+            {% endfor %}
+        </select>
+
+        <div class="sep"></div>
+
+        <button class="btn" onclick="loadExisting()" title="Load all current records from Grocy">Load Existing</button>
+        <button class="btn" onclick="addRows(10)">+ 10 Rows</button>
+        <button class="btn" onclick="clearGrid()">Clear</button>
+
+        <div class="sep"></div>
+
+        <button class="btn" onclick="document.getElementById('csvFile').click()">Upload CSV</button>
+        <button class="btn" onclick="downloadCsv()">Download CSV</button>
+        <input type="file" id="csvFile" accept=".csv" onchange="uploadCsv(event)">
+
+        <div class="sep"></div>
+
+        <button class="btn btn-primary" onclick="importData()">Import &rarr;</button>
+
+        <span class="status" id="statusBadge"></span>
+    </div>
+
+    <div class="main">
+        <div id="configNotice" class="notice" style="display:none">
+            &#9888; Grocy is not configured. Go to the add-on <strong>Configuration</strong> tab and set your Grocy URL and API key.
+        </div>
+        <div class="grid-wrap">
+            <div id="spreadsheet"></div>
+        </div>
+        <div class="log-panel" id="logPanel">
+            <div class="log-placeholder">Import results will appear here.</div>
+        </div>
+    </div>
+
+    <script>
+        const BASE = '{{ ingress_path | safe }}';
+        let sheet = null;
+        let currentCols = [];
+        let currentEntity = document.getElementById('entitySelect').value;
+
+        function url(path) {
+            return BASE + path;
+        }
+
+        async function checkConfig() {
+            try {
+                const r = await fetch(url('/api/config'));
+                const cfg = await r.json();
+                document.getElementById('configNotice').style.display = cfg.configured ? 'none' : 'flex';
+                return cfg.configured;
+            } catch { return false; }
+        }
+
+        async function onEntityChange() {
+            currentEntity = document.getElementById('entitySelect').value;
+            await loadSchema(false);
+        }
+
+        async function loadSchema(withData) {
+            setStatus('Loading…', 'loading');
+            try {
+                const r = await fetch(url(`/api/schema/${currentEntity}?withData=${withData ? '1' : '0'}`));
+                const result = await r.json();
+                currentCols = result.columns;
+                buildSheet(currentCols, withData ? result.data : []);
+                if (withData) {
+                    setStatus(`${result.data.length} records loaded`, 'ok');
+                    log(`Loaded ${result.data.length} existing ${currentEntity} records`, 'info');
+                } else {
+                    setStatus('Ready', '');
+                }
+            } catch (e) {
+                setStatus('Schema load failed', 'error');
+                log('Schema load error: ' + e.message, 'error');
+            }
+        }
+
+        async function loadExisting() {
+            await loadSchema(true);
+        }
+
+        function buildSheet(columns, data) {
+            const el = document.getElementById('spreadsheet');
+            if (sheet) {
+                try { jspreadsheet.destroy(el); } catch (e) {}
+                el.innerHTML = '';
+                sheet = null;
+            }
+
+            const colDefs = columns.map(col => ({
+                type: 'text',
+                title: col,
+                width: col === 'id' ? 55
+                     : col.includes('description') || col.includes('note') ? 240
+                     : col.includes('name') ? 200
+                     : 150,
+                readOnly: col === 'id',
+            }));
+
+            let tableData;
+            if (data && data.length > 0) {
+                tableData = data.map(row =>
+                    columns.map(c => {
+                        const v = row[c];
+                        return v === null || v === undefined ? '' : String(v);
+                    })
+                );
+                // Pad to at least 10 blank rows below existing data
+                const blank = Array(10).fill(null).map(() => Array(columns.length).fill(''));
+                tableData = tableData.concat(blank);
+            } else {
+                tableData = Array(50).fill(null).map(() => Array(columns.length).fill(''));
+            }
+
+            const wrapH = document.querySelector('.grid-wrap').clientHeight;
+
+            sheet = jspreadsheet(el, {
+                data: tableData,
+                columns: colDefs,
+                tableOverflow: true,
+                tableWidth: '100%',
+                tableHeight: (wrapH - 2) + 'px',
+                minDimensions: [columns.length, 50],
+                allowInsertColumn: false,
+                allowDeleteColumn: false,
+                contextMenu: function(obj, x, y, e, items) {
+                    return items.filter(item =>
+                        item && typeof item.title === 'string' &&
+                        /row/i.test(item.title)
+                    );
+                },
+            });
+        }
+
+        function clearGrid() {
+            if (!sheet) return;
+            const empty = Array(50).fill(null).map(() => Array(currentCols.length).fill(''));
+            sheet.setData(empty);
+            log('Grid cleared', 'info');
+            setStatus('Cleared', '');
+        }
+
+        function addRows(n) {
+            if (!sheet) return;
+            const blank = Array(n).fill(null).map(() => Array(currentCols.length).fill(''));
+            sheet.insertRow(blank);
+        }
+
+        function uploadCsv(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = e => {
+                const lines = e.target.result.trim().split(/\r?\n/);
+                if (!lines.length) return;
+                const headers = parseCsvRow(lines[0]);
+                const rows = lines.slice(1).map(l => parseCsvRow(l));
+                const colMap = headers.map(h => currentCols.indexOf(h.trim()));
+                const aligned = rows.map(row => {
+                    const out = Array(currentCols.length).fill('');
+                    colMap.forEach((ci, i) => {
+                        if (ci >= 0 && row[i] !== undefined) out[ci] = row[i];
+                    });
+                    return out;
+                });
+                if (sheet) sheet.setData(aligned);
+                log(`CSV uploaded: ${aligned.length} rows — columns matched: ${headers.filter((h, i) => colMap[i] >= 0).join(', ')}`, 'info');
+                const unmatched = headers.filter((h, i) => colMap[i] < 0);
+                if (unmatched.length) log(`Unmatched CSV columns (ignored): ${unmatched.join(', ')}`, 'error');
+            };
+            reader.readAsText(file);
+            event.target.value = '';
+        }
+
+        function parseCsvRow(line) {
+            const result = [];
+            let cur = '', inQ = false;
+            for (let i = 0; i < line.length; i++) {
+                const c = line[i];
+                if (c === '"') {
+                    if (inQ && line[i + 1] === '"') { cur += '"'; i++; }
+                    else { inQ = !inQ; }
+                } else if (c === ',' && !inQ) {
+                    result.push(cur); cur = '';
+                } else { cur += c; }
+            }
+            result.push(cur);
+            return result;
+        }
+
+        function downloadCsv() {
+            if (!sheet) return;
+            sheet.download(false);
+        }
+
+        async function importData() {
+            if (!sheet) return;
+
+            const data = sheet.getData();
+            const rows = [];
+
+            data.forEach(row => {
+                const obj = {};
+                currentCols.forEach((col, i) => {
+                    const v = row[i];
+                    if (v !== '' && v !== null && v !== undefined) {
+                        obj[col] = v;
+                    }
+                });
+                // Skip rows that are empty or have only an id (no actual data)
+                const keys = Object.keys(obj);
+                if (keys.length > 0 && !(keys.length === 1 && keys[0] === 'id')) {
+                    rows.push(obj);
+                }
+            });
+
+            if (rows.length === 0) {
+                log('Nothing to import — add some data first', 'info');
+                return;
+            }
+
+            clearLog();
+            setStatus(`Importing ${rows.length} rows…`, 'loading');
+            log(`Starting import of ${rows.length} rows into ${currentEntity}…`, 'info');
+
+            try {
+                const r = await fetch(url(`/api/import/${currentEntity}`), {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ rows }),
+                });
+                const result = await r.json();
+
+                let ok = 0, errs = 0;
+                result.results.forEach((res, i) => {
+                    if (res.ok) {
+                        ok++;
+                        const idStr = res.created_id ? ` → id=${res.created_id}` : (res.row.id ? ` (updated id=${res.row.id})` : '');
+                        log(`Row ${i + 1}: ✓ ${res.status}${idStr}`, 'ok');
+                    } else {
+                        errs++;
+                        const detail = JSON.stringify(res.response || res.error || '');
+                        log(`Row ${i + 1}: ✗ ${res.status} — ${detail}`, 'error');
+                    }
+                });
+                setStatus(`${ok} imported, ${errs} failed`, errs > 0 ? 'error' : 'ok');
+            } catch (e) {
+                setStatus('Request failed', 'error');
+                log('Import request error: ' + e.message, 'error');
+            }
+        }
+
+        function setStatus(msg, type) {
+            const el = document.getElementById('statusBadge');
+            el.textContent = msg;
+            el.className = 'status ' + (type || '');
+        }
+
+        function clearLog() {
+            document.getElementById('logPanel').innerHTML = '';
+        }
+
+        function log(msg, type) {
+            const panel = document.getElementById('logPanel');
+            const entry = document.createElement('div');
+            entry.className = 'log-entry ' + (type || 'info');
+            entry.textContent = `[${new Date().toLocaleTimeString()}] ${msg}`;
+            panel.appendChild(entry);
+            panel.scrollTop = panel.scrollHeight;
+        }
+
+        // Boot
+        checkConfig();
+        loadSchema(false);
+    </script>
+</body>
+</html>
