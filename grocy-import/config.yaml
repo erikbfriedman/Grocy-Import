@@ -1,6 +1,6 @@
 name: "Grocy Import"
 description: "Spreadsheet-style bulk importer for all major Grocy data tables"
-version: "1.0.0"
+version: "1.0.1"
 slug: grocy_import
 init: false
 arch:
