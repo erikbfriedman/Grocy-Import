@@ -69,6 +69,11 @@ DEFAULT_COLUMNS = {
     ],
 }
 
+# Columns Grocy returns in GET responses that are read-only or computed and must not be sent back
+NON_WRITABLE = frozenset({
+    'userfields', 'row_created_timestamp',
+})
+
 # Maps FK field names to the entity they reference and which field to use as the display label
 LINKED_FIELDS = {
     'location_id':                        {'entity': 'locations',       'label': 'name'},
@@ -129,7 +134,12 @@ def get_schema(entity):
             if resp.ok:
                 fetched = resp.json() or []
                 if fetched and isinstance(fetched, list):
-                    actual_cols = list(fetched[0].keys())
+                    sample = fetched[0]
+                    actual_cols = [
+                        c for c in sample.keys()
+                        if c not in NON_WRITABLE
+                        and not isinstance(sample.get(c), (dict, list))
+                    ]
                     if 'id' in actual_cols:
                         actual_cols.remove('id')
                         actual_cols = ['id'] + actual_cols

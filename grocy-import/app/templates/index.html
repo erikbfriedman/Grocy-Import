@@ -387,7 +387,18 @@
 
         function scheduleRowSave(rowIdx) {
             clearTimeout(saveTimers[rowIdx]);
-            saveTimers[rowIdx] = setTimeout(() => saveRow(rowIdx), 400);
+            const allData = sheet.getData();
+            const rowArr  = allData[rowIdx] || [];
+            const obj = {};
+            currentCols.forEach((col, i) => {
+                const v = rowArr[i];
+                if (v !== '' && v !== null && v !== undefined) obj[col] = v;
+            });
+            const isNew = !obj.id;
+            // New rows: wait longer and require at least a name before attempting save
+            const delay = isNew ? 2000 : 400;
+            if (isNew && !obj.name) return;
+            saveTimers[rowIdx] = setTimeout(() => saveRow(rowIdx), delay);
         }
 
         async function saveRow(rowIdx) {
@@ -402,7 +413,6 @@
             });
 
             const keys = Object.keys(obj);
-            // Skip completely empty rows or rows with only an id and no data
             if (keys.length === 0) return;
             if (keys.length === 1 && keys[0] === 'id') return;
 
@@ -430,13 +440,25 @@
                     log(`Row ${rowIdx + 1}: ✓ saved${r.created_id ? ' (id=' + r.created_id + ')' : ''}`, 'ok');
                 } else {
                     showAutosave('error', 'error');
-                    const detail = JSON.stringify(r.response || r.error || '');
-                    log(`Row ${rowIdx + 1}: ✗ ${r.status} — ${detail}`, 'error');
+                    log(`Row ${rowIdx + 1}: ✗ ${friendlyError(r.response || r.error)}`, 'error');
                 }
             } catch (e) {
                 showAutosave('error', 'error');
                 log(`Row ${rowIdx + 1}: save error — ${e.message}`, 'error');
             }
+        }
+
+        function friendlyError(detail) {
+            const msg = (typeof detail === 'object' && detail !== null)
+                ? (detail.error_message || JSON.stringify(detail))
+                : String(detail || '');
+            const notNull = msg.match(/NOT NULL constraint failed: \w+\.(\w+)/);
+            if (notNull) return `Required field not filled: ${notNull[1]}`;
+            const noCol = msg.match(/no such column: (\w+)/);
+            if (noCol) return `Computed column "${noCol[1]}" can't be saved — reload schema to refresh columns`;
+            const unique = msg.match(/UNIQUE constraint failed: \w+\.(\w+)/);
+            if (unique) return `Duplicate value in unique field: ${unique[1]}`;
+            return msg;
         }
 
         function showAutosave(type, label) {
