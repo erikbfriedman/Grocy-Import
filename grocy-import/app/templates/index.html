@@ -434,7 +434,6 @@
                             : col.includes('description') || col.includes('note') ? 240
                             : col.includes('name') ? 200
                             : 150,
-                    readOnly: col === 'id',
                     autocomplete: source ? true : undefined,
                 };
             });
@@ -466,6 +465,11 @@
                 minDimensions: [columns.length, 50],
                 allowInsertColumn: false,
                 allowDeleteColumn: false,
+                onbeforechange: function(instance, cell, x, y, value) {
+                    // Block manual edits to the id column; only auto-save may write it
+                    if (currentCols[x] === 'id' && !suppressAutoSave) return false;
+                    return value;
+                },
                 onchange: function(instance, cell, x, y, value) {
                     if (!suppressAutoSave) scheduleRowSave(y);
                 },
@@ -534,12 +538,12 @@
                         const idColIdx = currentCols.indexOf('id');
                         if (idColIdx >= 0) {
                             suppressAutoSave = true;
-                            sheet.setValueFromCoords(idColIdx, rowIdx, r.created_id, true);
+                            sheet.setValueFromCoords(idColIdx, rowIdx, String(r.created_id));
                             suppressAutoSave = false;
                         }
                     }
                     showAutosave('ok', 'saved');
-                    log(`Row ${rowIdx + 1}: ✓ saved${r.created_id ? ' (id=' + r.created_id + ')' : ''}`, 'ok');
+                    log(`Row ${rowIdx + 1}: ✓ saved${r.created_id ? ' → id ' + r.created_id : ''}`, 'ok');
                 } else {
                     showAutosave('error', 'error');
                     log(`Row ${rowIdx + 1}: ✗ ${friendlyError(r.response || r.error)}`, 'error');
