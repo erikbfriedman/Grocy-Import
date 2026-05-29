@@ -1,0 +1,24 @@
+#!/bin/bash
+# Auto-increment patch version in grocy-import/config.yaml before every commit.
+# Install: git config core.hooksPath .githooks
+
+CONFIG="grocy-import/config.yaml"
+
+if [ ! -f "$CONFIG" ]; then
+    exit 0
+fi
+
+CURRENT=$(grep '^version:' "$CONFIG" | sed 's/version: "\(.*\)"/\1/')
+
+if [ -z "$CURRENT" ]; then
+    exit 0
+fi
+
+IFS='.' read -r MAJOR MINOR PATCH <<< "$CURRENT"
+PATCH=$((PATCH + 1))
+NEW="$MAJOR.$MINOR.$PATCH"
+
+sed -i "s/version: \"$CURRENT\"/version: \"$NEW\"/" "$CONFIG"
+git add "$CONFIG"
+
+echo "  version $CURRENT → $NEW"
