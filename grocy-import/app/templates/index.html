@@ -350,7 +350,7 @@
             try {
                 const [schemaResp, lookupsResp] = await Promise.all([
                     fetch(url(`/api/schema/${currentEntity}?withData=${withData ? '1' : '0'}`)),
-                    fetch(url('/api/lookups')),
+                    fetch(url(`/api/lookups?entity=${currentEntity}`)),
                 ]);
                 const schema  = await schemaResp.json();
                 const lookups = await lookupsResp.json();
