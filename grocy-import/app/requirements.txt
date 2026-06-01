@@ -1,5 +1,5 @@
 flask>=2.3
 requests>=2.31
-pymupdf>=1.23
+pdf2image>=1.16
 pytesseract>=0.3
 Pillow>=10

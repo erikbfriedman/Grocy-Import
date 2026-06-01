@@ -7,13 +7,9 @@ from flask import Flask, render_template, request, jsonify
 
 _OCR_MISSING = []
 try:
-    import fitz          # pymupdf
+    from pdf2image import convert_from_bytes
 except ImportError:
-    _OCR_MISSING.append('pymupdf')
-try:
-    from PIL import Image
-except ImportError:
-    _OCR_MISSING.append('Pillow')
+    _OCR_MISSING.append('pdf2image')
 try:
     import pytesseract
 except ImportError:
@@ -375,6 +371,7 @@ def receipt_status():
         'ocr_ready': _HAS_OCR and tess == 'ok',
         'missing_packages': _OCR_MISSING,
         'tesseract': tess,
+        'poppler': 'bundled with pdf2image',
     })
 
 
@@ -388,17 +385,11 @@ def parse_receipt():
     items = []
     try:
         raw = request.files['file'].read()
-        doc = fitz.open(stream=raw, filetype='pdf')
+        # Render all PDF pages to images at 216 DPI, then OCR each
+        pages = convert_from_bytes(raw, dpi=216)
         all_lines = []
-        for page in doc:
-            # Try native text extraction first (works for text-based PDFs)
-            text = page.get_text('text')
-            if not text.strip():
-                # Fall back to OCR: render page at 3x zoom then run tesseract
-                mat = fitz.Matrix(3, 3)
-                pix = page.get_pixmap(matrix=mat)
-                img = Image.frombytes('RGB', [pix.width, pix.height], pix.samples)
-                text = pytesseract.image_to_string(img, config='--psm 6')
+        for img in pages:
+            text = pytesseract.image_to_string(img, config='--psm 6')
             all_lines.extend(text.split('\n'))
 
         # ── Walmart online order format ──────────────────────────────────────
