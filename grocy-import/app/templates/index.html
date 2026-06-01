@@ -258,6 +258,193 @@
             font-size: 11px;
             max-width: 150px;
         }
+
+        /* ── Receipt Import ─────────────────────────────── */
+        .btn-success {
+            background: var(--success);
+            color: #fff;
+            border-color: var(--success);
+            font-size: 13px;
+            padding: 5px 16px;
+        }
+        .btn-success:hover:not(:disabled) { filter: brightness(1.1); color: #fff; border-color: var(--success); }
+
+        .receipt-panel {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            gap: 8px;
+            min-height: 0;
+        }
+
+        .receipt-upload-zone {
+            flex: 1;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border: 2px dashed var(--border);
+            border-radius: 8px;
+            cursor: pointer;
+            transition: border-color 0.2s, background 0.2s;
+            background: var(--surface);
+            text-align: center;
+        }
+        .receipt-upload-zone:hover, .receipt-upload-zone.drag-over {
+            border-color: var(--primary);
+            background: rgba(3,169,244,0.05);
+        }
+        .receipt-upload-icon { font-size: 42px; margin-bottom: 10px; }
+        .receipt-upload-headline { font-size: 15px; margin-bottom: 6px; }
+        .receipt-upload-sub { font-size: 12px; color: var(--text-muted); margin-bottom: 14px; }
+        .upload-link { color: var(--primary); text-decoration: underline; cursor: pointer; }
+
+        .receipt-content {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            min-height: 0;
+            gap: 0;
+        }
+
+        .receipt-header-bar {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 7px 12px;
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 6px 6px 0 0;
+            flex-shrink: 0;
+            flex-wrap: wrap;
+        }
+        .receipt-count { font-size: 12px; color: var(--text-muted); flex: 1; }
+        .receipt-loc-label { font-size: 11px; color: var(--text-muted); display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
+        .receipt-loc-label select { font-size: 11px; min-width: 160px; }
+
+        .receipt-item-list {
+            flex: 1;
+            overflow-y: auto;
+            border: 1px solid var(--border);
+            border-top: none;
+            background: var(--bg);
+            min-height: 0;
+        }
+
+        .ri-card { border-bottom: 1px solid var(--border); background: var(--surface); }
+        .ri-card:last-child { border-bottom: none; }
+
+        .ri-top {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 9px 14px;
+            flex-wrap: wrap;
+        }
+        .ri-receipt-side {
+            flex: 1;
+            min-width: 0;
+            display: flex;
+            align-items: baseline;
+            gap: 8px;
+        }
+        .ri-desc {
+            font-size: 12px;
+            color: var(--text);
+            font-family: 'Courier New', monospace;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        .ri-meta { font-size: 11px; color: var(--text-muted); white-space: nowrap; flex-shrink: 0; }
+        .ri-match-side { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+
+        .ri-select {
+            background: var(--surface2);
+            color: var(--text);
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            padding: 5px 10px;
+            font-size: 12px;
+            min-width: 260px;
+            max-width: 340px;
+            cursor: pointer;
+            outline: none;
+        }
+        .ri-select:focus { border-color: var(--primary); }
+        .ri-select.matched { border-color: var(--success); }
+        .ri-select.skipped { border-color: var(--text-muted); opacity: 0.6; }
+
+        .ri-badge { font-size: 15px; flex-shrink: 0; width: 20px; text-align: center; }
+
+        /* New product inline form */
+        .ri-new-form {
+            border-top: 1px solid rgba(3,169,244,0.2);
+            background: rgba(3,169,244,0.04);
+            padding: 14px 18px;
+        }
+        .ri-new-form-title {
+            font-size: 10px;
+            font-weight: 700;
+            color: var(--primary);
+            text-transform: uppercase;
+            letter-spacing: 0.07em;
+            margin-bottom: 10px;
+        }
+        .ri-form-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 8px 14px;
+        }
+        .ri-field { display: flex; flex-direction: column; gap: 3px; }
+        .ri-field label {
+            font-size: 10px;
+            font-weight: 600;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.04em;
+        }
+        .ri-field label .req { color: var(--error); margin-left: 1px; }
+        .ri-field input, .ri-field select, .ri-field textarea {
+            background: var(--surface2);
+            color: var(--text);
+            border: 1px solid var(--border);
+            border-radius: 5px;
+            padding: 5px 9px;
+            font-size: 12px;
+            font-family: inherit;
+            outline: none;
+        }
+        .ri-field input:focus, .ri-field select:focus, .ri-field textarea:focus { border-color: var(--primary); }
+        .ri-field textarea { resize: vertical; min-height: 44px; }
+        .ri-collapsible-toggle {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            margin: 10px 0 6px;
+            font-size: 11px;
+            color: var(--text-muted);
+            cursor: pointer;
+            user-select: none;
+        }
+        .ri-collapsible-toggle:hover { color: var(--text); }
+        .ri-form-actions { display: flex; align-items: center; gap: 10px; margin-top: 12px; }
+        .ri-form-error { font-size: 11px; color: var(--error); flex: 1; }
+
+        /* Footer bar */
+        .receipt-footer-bar {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 9px 14px;
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 0 0 6px 6px;
+            border-top: none;
+            flex-shrink: 0;
+        }
+        .receipt-match-status { font-size: 12px; color: var(--text-muted); }
     </style>
 </head>
 <body>
@@ -284,6 +471,10 @@
 
         <div class="sep"></div>
 
+        <button class="btn" id="receiptModeBtn" onclick="toggleReceiptMode()">&#129534; Walmart Receipt</button>
+
+        <div class="sep"></div>
+
         <button class="btn btn-primary" onclick="importAll()">Import All &rarr;</button>
         <span class="autosave-badge" id="autosaveBadge">saved</span>
         <span class="status" id="statusBadge"></span>
@@ -299,9 +490,38 @@
         <div id="configNotice" class="notice" style="display:none">
             &#9888; Grocy is not configured. Go to the add-on <strong>Configuration</strong> tab and set your Grocy URL and API key.
         </div>
-        <div class="grid-wrap">
+        <div class="grid-wrap" id="gridWrap">
             <div id="spreadsheet"></div>
         </div>
+
+        <!-- Receipt Import Panel -->
+        <div class="receipt-panel" id="receiptPanel" style="display:none">
+            <div class="receipt-upload-zone" id="receiptUploadZone">
+                <div>
+                    <div class="receipt-upload-icon">🧾</div>
+                    <div class="receipt-upload-headline">Drop Walmart receipt PDF here</div>
+                    <div class="receipt-upload-sub">or <span class="upload-link" onclick="document.getElementById('receiptPdfFile').click()">browse to select a file</span></div>
+                    <div style="font-size:11px;color:var(--text-muted)">Supports Walmart digital e-receipt PDFs</div>
+                </div>
+                <input type="file" id="receiptPdfFile" accept=".pdf" style="display:none" onchange="handleReceiptFile(event)">
+            </div>
+            <div class="receipt-content" id="receiptContent" style="display:none">
+                <div class="receipt-header-bar">
+                    <span id="receiptItemCount" class="receipt-count"></span>
+                    <label class="receipt-loc-label">
+                        Walmart location:
+                        <select id="walmartLocSelect"><option value="">Loading…</option></select>
+                    </label>
+                    <button class="btn" onclick="resetReceipt()">&#8592; New Receipt</button>
+                </div>
+                <div id="receiptItemList" class="receipt-item-list"></div>
+                <div id="receiptFooterBar" class="receipt-footer-bar" style="display:none">
+                    <span id="receiptMatchStatus" class="receipt-match-status"></span>
+                    <button class="btn btn-success" onclick="receiveStock()">Receive Stock &#8594;</button>
+                </div>
+            </div>
+        </div>
+
         <div class="log-panel" id="logPanel">
             <div class="log-placeholder">Changes are saved automatically. Import log appears here.</div>
         </div>
@@ -691,6 +911,483 @@
                 log('Import error: ' + e.message, 'error');
             }
         }
+
+        // ── Receipt Import ───────────────────────────────────────────────────
+
+        let receiptMode      = false;
+        let receiptItems     = [];   // [{description, price, quantity, unit_price}]
+        let receiptMatches   = {};   // idx → {id, name} | 'skip' | null
+        let allProducts      = [];   // [{id, name}] from Grocy
+        let receiptLookups   = {};   // FK lookups for new product form
+        let receiptInitDone  = false;
+
+        function toggleReceiptMode() {
+            receiptMode = !receiptMode;
+            const btn        = document.getElementById('receiptModeBtn');
+            const gridWrap   = document.getElementById('gridWrap');
+            const logPanel   = document.getElementById('logPanel');
+            const panel      = document.getElementById('receiptPanel');
+            const defBar     = document.getElementById('defaultsBar');
+
+            if (receiptMode) {
+                btn.classList.add('btn-primary');
+                btn.textContent = '✕ Receipt Mode';
+                gridWrap.style.display = 'none';
+                logPanel.style.display = 'none';
+                defBar.style.display   = 'none';
+                panel.style.display    = 'flex';
+                if (!receiptInitDone) initReceiptMode();
+            } else {
+                btn.classList.remove('btn-primary');
+                btn.textContent = '🧾 Walmart Receipt';
+                gridWrap.style.display = '';
+                logPanel.style.display = '';
+                renderDefaultsBar(currentCols, currentFieldSources);
+                panel.style.display = 'none';
+            }
+        }
+
+        async function initReceiptMode() {
+            receiptInitDone = true;
+            try {
+                const [schemaResp, lookupsResp, slResp] = await Promise.all([
+                    fetch(url('/api/schema/products?withData=1')),
+                    fetch(url('/api/lookups?entity=products')),
+                    fetch(url('/api/schema/shopping_locations?withData=1')),
+                ]);
+                const schema   = await schemaResp.json();
+                const lookups  = await lookupsResp.json();
+                const slSchema = await slResp.json();
+
+                allProducts    = (schema.data || []).map(p => ({ id: String(p.id), name: p.name || String(p.id) }));
+                receiptLookups = lookups;
+
+                const sel = document.getElementById('walmartLocSelect');
+                const locs = slSchema.data || [];
+                sel.innerHTML = `<option value="">-- select --</option>` +
+                    locs.map(l => {
+                        const isWal = /walmart/i.test(l.name || '');
+                        return `<option value="${l.id}"${isWal ? ' selected' : ''}>${l.name}</option>`;
+                    }).join('');
+            } catch (e) {
+                console.error('Receipt init failed', e);
+            }
+        }
+
+        // ── File handling ────────────────────────────────────────────────────
+
+        async function handleReceiptFile(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+            event.target.value = '';
+            await uploadReceiptPdf(file);
+        }
+
+        async function uploadReceiptPdf(file) {
+            setStatus('Parsing receipt…', 'loading');
+            const formData = new FormData();
+            formData.append('file', file);
+            try {
+                const resp   = await fetch(url('/api/receipt/parse'), { method: 'POST', body: formData });
+                const result = await resp.json();
+                if (!resp.ok || result.error) {
+                    setStatus('Parse failed: ' + (result.error || resp.statusText), 'error');
+                    return;
+                }
+                receiptItems   = result.items || [];
+                receiptMatches = {};
+                if (receiptItems.length === 0) {
+                    setStatus('No items found in receipt — check the PDF format', 'error');
+                    return;
+                }
+                // Auto-match each item to best Grocy product
+                receiptItems.forEach((item, idx) => {
+                    const m = findBestMatch(item.description);
+                    receiptMatches[idx] = m || null;
+                });
+                renderReceiptList();
+                document.getElementById('receiptUploadZone').style.display  = 'none';
+                document.getElementById('receiptContent').style.display     = 'flex';
+                document.getElementById('receiptItemCount').textContent     = `${receiptItems.length} items parsed from receipt`;
+                checkAllMatched();
+                setStatus(`${receiptItems.length} items parsed`, 'ok');
+            } catch (e) {
+                setStatus('Parse error: ' + e.message, 'error');
+            }
+        }
+
+        // ── Fuzzy matching ───────────────────────────────────────────────────
+
+        function scoreMatch(receiptDesc, productName) {
+            const norm  = s => s.toLowerCase().replace(/[^a-z0-9\s]/g, '').split(/\s+/).filter(Boolean);
+            const rw    = norm(receiptDesc);
+            const pw    = norm(productName);
+            if (!rw.length || !pw.length) return 0;
+            let score = 0;
+            for (const r of rw) {
+                for (const p of pw) {
+                    if (p === r)                                        score += 2;
+                    else if (r.length > 2 && p.length > 2 &&
+                             (p.startsWith(r) || r.startsWith(p)))     score += 1;
+                }
+            }
+            return score / (rw.length + pw.length);
+        }
+
+        function findBestMatch(desc) {
+            let best = null, bestScore = 0;
+            for (const p of allProducts) {
+                const s = scoreMatch(desc, p.name);
+                if (s > bestScore) { bestScore = s; best = p; }
+            }
+            return bestScore >= 0.25 ? best : null;
+        }
+
+        function toTitleCase(str) {
+            return str.toLowerCase().replace(/\b\w/g, c => c.toUpperCase());
+        }
+
+        // ── Render item list ─────────────────────────────────────────────────
+
+        function renderReceiptList() {
+            const list = document.getElementById('receiptItemList');
+            list.innerHTML = '';
+            receiptItems.forEach((item, idx) => renderReceiptItem(list, item, idx));
+        }
+
+        function renderReceiptItem(list, item, idx) {
+            const match     = receiptMatches[idx];
+            const isSkipped = match === 'skip';
+            const isMatched = match && match !== 'skip';
+            const matchedId = isMatched ? match.id : '';
+
+            // Sort products: top matches first
+            const scored     = allProducts
+                .map(p => ({ ...p, score: scoreMatch(item.description, p.name) }))
+                .sort((a, b) => b.score - a.score);
+            const topMatches = scored.filter(p => p.score >= 0.25).slice(0, 8);
+            const rest       = scored.filter(p => p.score < 0.25);
+
+            let optHtml = `<option value="">-- Select Grocy item --</option>`;
+            if (topMatches.length) {
+                optHtml += `<optgroup label="Best matches">` +
+                    topMatches.map(p =>
+                        `<option value="${p.id}"${p.id === matchedId ? ' selected' : ''}>${p.name}</option>`
+                    ).join('') + `</optgroup>`;
+            }
+            optHtml += `<optgroup label="${topMatches.length ? 'All products' : 'Products'}">` +
+                rest.map(p =>
+                    `<option value="${p.id}"${p.id === matchedId ? ' selected' : ''}>${p.name}</option>`
+                ).join('') + `</optgroup>`;
+            optHtml += `<option value="__new__">+ Add new item…</option>`;
+            optHtml += `<option value="__skip__"${isSkipped ? ' selected' : ''}>— Skip this item</option>`;
+
+            const badge      = isMatched ? '✓' : (isSkipped ? '—' : '○');
+            const selClass   = 'ri-select' + (isMatched ? ' matched' : isSkipped ? ' skipped' : '');
+            const metaParts  = [];
+            if (item.quantity > 1) metaParts.push(`×${item.quantity}`);
+            metaParts.push(`$${item.price.toFixed(2)}`);
+
+            const card = document.createElement('div');
+            card.className = 'ri-card';
+            card.id        = `ri-${idx}`;
+            card.innerHTML = `
+                <div class="ri-top">
+                    <div class="ri-receipt-side">
+                        <span class="ri-desc" title="${item.description}">${item.description}</span>
+                        <span class="ri-meta">${metaParts.join(' · ')}</span>
+                    </div>
+                    <div class="ri-match-side">
+                        <select class="${selClass}" id="ri-sel-${idx}" onchange="onMatchSelect(${idx},this.value)">
+                            ${optHtml}
+                        </select>
+                        <span class="ri-badge" id="ri-badge-${idx}">${badge}</span>
+                    </div>
+                </div>
+                <div class="ri-new-form" id="ri-form-${idx}" style="display:none">
+                    ${buildNewProductForm(idx, item)}
+                </div>`;
+            list.appendChild(card);
+        }
+
+        // ── New product form ─────────────────────────────────────────────────
+
+        function buildSelectOpts(key, includeBlank = true) {
+            const src  = receiptLookups[key] || [];
+            let html   = includeBlank ? `<option value="">-- select --</option>` : '';
+            src.forEach(s => { html += `<option value="${s.id}">${s.name}</option>`; });
+            return html;
+        }
+
+        function buildNewProductForm(idx, item) {
+            const titleName = toTitleCase(item.description);
+            const desc      = item.description;
+
+            const optionalFields = [
+                { key: 'shopping_location_id',                  label: 'Default Shopping Location' },
+                { key: 'parent_product_id',                     label: 'Parent Product' },
+                { key: 'qu_factor_purchase_to_stock',           label: 'QU Factor Purchase→Stock', type: 'number' },
+                { key: 'min_stock_amount',                      label: 'Min Stock Amount',          type: 'number' },
+                { key: 'default_best_before_days',              label: 'Best Before Days',          type: 'number' },
+                { key: 'default_best_before_days_after_open',   label: 'Best Before (after open)',  type: 'number' },
+                { key: 'calories',                              label: 'Calories',                  type: 'number' },
+                { key: 'active',                                label: 'Active (1=yes)',            type: 'number' },
+            ];
+
+            const optHtml = optionalFields.map(f => {
+                const src = receiptLookups[f.key];
+                const input = src
+                    ? `<select id="np-${idx}-${f.key}">${buildSelectOpts(f.key)}</select>`
+                    : `<input type="${f.type || 'text'}" id="np-${idx}-${f.key}" placeholder="${f.label}">`;
+                return `<div class="ri-field"><label>${f.label}</label>${input}</div>`;
+            }).join('');
+
+            // Pre-select Walmart shopping location in optional section if detected
+            const walmartId = document.getElementById('walmartLocSelect').value;
+
+            return `
+                <div class="ri-new-form-title">New Product</div>
+                <div class="ri-form-grid">
+                    <div class="ri-field" style="grid-column:1/-1">
+                        <label>Name <span class="req">*</span></label>
+                        <input type="text" id="np-${idx}-name" value="${titleName.replace(/"/g,'&quot;')}">
+                    </div>
+                    <div class="ri-field" style="grid-column:1/-1">
+                        <label>Description</label>
+                        <textarea id="np-${idx}-description">${desc}</textarea>
+                    </div>
+                    <div class="ri-field">
+                        <label>Product Group</label>
+                        <select id="np-${idx}-product_group_id">${buildSelectOpts('product_group_id')}</select>
+                    </div>
+                    <div class="ri-field">
+                        <label>Storage Location <span class="req">*</span></label>
+                        <select id="np-${idx}-location_id">${buildSelectOpts('location_id')}</select>
+                    </div>
+                    <div class="ri-field">
+                        <label>QU Purchase <span class="req">*</span></label>
+                        <select id="np-${idx}-qu_id_purchase">${buildSelectOpts('qu_id_purchase')}</select>
+                    </div>
+                    <div class="ri-field">
+                        <label>QU Stock <span class="req">*</span></label>
+                        <select id="np-${idx}-qu_id_stock">${buildSelectOpts('qu_id_stock')}</select>
+                    </div>
+                </div>
+                <div class="ri-collapsible-toggle" onclick="toggleOptionalFields(${idx})">
+                    <span id="ri-expand-${idx}">▶</span> Optional fields
+                </div>
+                <div id="ri-optional-${idx}" style="display:none">
+                    <div class="ri-form-grid">${optHtml}</div>
+                </div>
+                <div class="ri-form-actions">
+                    <button class="btn btn-primary" onclick="saveNewProduct(${idx})">Save Product</button>
+                    <button class="btn" onclick="cancelNewProduct(${idx})">Cancel</button>
+                    <span class="ri-form-error" id="ri-form-err-${idx}"></span>
+                </div>`;
+        }
+
+        function toggleOptionalFields(idx) {
+            const el   = document.getElementById(`ri-optional-${idx}`);
+            const icon = document.getElementById(`ri-expand-${idx}`);
+            const show = el.style.display === 'none';
+            el.style.display = show ? '' : 'none';
+            icon.textContent  = show ? '▼' : '▶';
+            // Pre-fill shopping location to Walmart when section first opened
+            if (show) {
+                const wId  = document.getElementById('walmartLocSelect').value;
+                const slSel = document.getElementById(`np-${idx}-shopping_location_id`);
+                if (slSel && wId && !slSel.value) slSel.value = wId;
+            }
+        }
+
+        // ── Match selection ──────────────────────────────────────────────────
+
+        function onMatchSelect(idx, value) {
+            const sel   = document.getElementById(`ri-sel-${idx}`);
+            const badge = document.getElementById(`ri-badge-${idx}`);
+            const form  = document.getElementById(`ri-form-${idx}`);
+
+            if (value === '__new__') {
+                form.style.display  = '';
+                sel.className       = 'ri-select';
+                badge.textContent   = '○';
+                receiptMatches[idx] = null;
+            } else if (value === '__skip__') {
+                form.style.display  = 'none';
+                sel.className       = 'ri-select skipped';
+                badge.textContent   = '—';
+                receiptMatches[idx] = 'skip';
+            } else if (value) {
+                form.style.display  = 'none';
+                const prod          = allProducts.find(p => p.id === value) || { id: value, name: value };
+                receiptMatches[idx] = prod;
+                sel.className       = 'ri-select matched';
+                badge.textContent   = '✓';
+            } else {
+                form.style.display  = 'none';
+                receiptMatches[idx] = null;
+                sel.className       = 'ri-select';
+                badge.textContent   = '○';
+            }
+            checkAllMatched();
+        }
+
+        // ── Save new product ─────────────────────────────────────────────────
+
+        async function saveNewProduct(idx) {
+            const get = field => {
+                const el = document.getElementById(`np-${idx}-${field}`);
+                return el ? el.value.trim() : '';
+            };
+
+            const errEl = document.getElementById(`ri-form-err-${idx}`);
+            errEl.textContent = '';
+
+            const name           = get('name');
+            const qu_id_purchase = get('qu_id_purchase');
+            const qu_id_stock    = get('qu_id_stock');
+            const location_id    = get('location_id');
+
+            const missing = [];
+            if (!name)           missing.push('Name');
+            if (!qu_id_purchase) missing.push('QU Purchase');
+            if (!qu_id_stock)    missing.push('QU Stock');
+            if (!location_id)    missing.push('Storage Location');
+            if (missing.length) { errEl.textContent = 'Required: ' + missing.join(', '); return; }
+
+            const payload = { name, qu_id_purchase, qu_id_stock, location_id };
+            ['description', 'product_group_id', 'shopping_location_id', 'parent_product_id',
+             'qu_factor_purchase_to_stock', 'min_stock_amount', 'default_best_before_days',
+             'default_best_before_days_after_open', 'calories', 'active'].forEach(f => {
+                const v = get(f);
+                if (v) payload[f] = v;
+            });
+
+            try {
+                const resp   = await fetch(url('/api/import/products'), {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ rows: [payload] }),
+                });
+                const result = await resp.json();
+                const r      = result.results[0];
+                if (!r.ok) { errEl.textContent = friendlyError(r.response || r.error); return; }
+
+                const newProduct = { id: String(r.created_id), name };
+                allProducts.push(newProduct);
+                receiptMatches[idx] = newProduct;
+
+                // Add to dropdown and select it
+                const sel    = document.getElementById(`ri-sel-${idx}`);
+                const newOpt = document.createElement('option');
+                newOpt.value       = newProduct.id;
+                newOpt.textContent = name;
+                const newItemOpt   = [...sel.options].find(o => o.value === '__new__');
+                sel.insertBefore(newOpt, newItemOpt);
+                sel.value     = newProduct.id;
+                sel.className = 'ri-select matched';
+                document.getElementById(`ri-badge-${idx}`).textContent  = '✓';
+                document.getElementById(`ri-form-${idx}`).style.display = 'none';
+
+                setStatus(`Saved: ${name}`, 'ok');
+                checkAllMatched();
+            } catch (e) {
+                errEl.textContent = 'Error: ' + e.message;
+            }
+        }
+
+        function cancelNewProduct(idx) {
+            document.getElementById(`ri-form-${idx}`).style.display = 'none';
+            const prev = receiptMatches[idx];
+            const sel  = document.getElementById(`ri-sel-${idx}`);
+            if (prev && prev !== 'skip') {
+                sel.value     = prev.id;
+                sel.className = 'ri-select matched';
+                document.getElementById(`ri-badge-${idx}`).textContent = '✓';
+            } else {
+                sel.value     = '';
+                sel.className = 'ri-select';
+                document.getElementById(`ri-badge-${idx}`).textContent = '○';
+            }
+        }
+
+        // ── Footer / receive stock ───────────────────────────────────────────
+
+        function checkAllMatched() {
+            const total    = receiptItems.length;
+            const resolved = Object.values(receiptMatches).filter(m => m !== null).length;
+            const skipped  = Object.values(receiptMatches).filter(m => m === 'skip').length;
+            const matched  = resolved - skipped;
+
+            const footer   = document.getElementById('receiptFooterBar');
+            document.getElementById('receiptMatchStatus').textContent =
+                `${matched} matched · ${skipped} skipped · ${total - resolved} remaining`;
+            footer.style.display = resolved === total ? 'flex' : 'none';
+        }
+
+        async function receiveStock() {
+            const walmartId = document.getElementById('walmartLocSelect').value;
+            const items     = receiptItems
+                .map((item, idx) => {
+                    const m = receiptMatches[idx];
+                    if (!m || m === 'skip') return null;
+                    return { product_id: m.id, amount: item.quantity,
+                             shopping_location_id: walmartId || undefined };
+                })
+                .filter(Boolean);
+
+            if (!items.length) return;
+            setStatus(`Receiving ${items.length} items…`, 'loading');
+
+            try {
+                const resp   = await fetch(url('/api/stock/receive'), {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ items }),
+                });
+                const result = await resp.json();
+                const ok   = result.results.filter(r => r.ok).length;
+                const fail = result.results.filter(r => !r.ok).length;
+
+                setStatus(`${ok} received${fail ? ', ' + fail + ' failed' : ''}`, fail ? 'error' : 'ok');
+                if (fail === 0) {
+                    document.getElementById('receiptFooterBar').innerHTML = `
+                        <span style="color:var(--success);font-size:13px;font-weight:600">
+                            ✓ ${ok} item${ok !== 1 ? 's' : ''} added to stock
+                        </span>
+                        <button class="btn" onclick="resetReceipt()">&#8592; New Receipt</button>`;
+                }
+            } catch (e) {
+                setStatus('Receive failed: ' + e.message, 'error');
+            }
+        }
+
+        function resetReceipt() {
+            receiptItems   = [];
+            receiptMatches = {};
+            document.getElementById('receiptUploadZone').style.display = '';
+            document.getElementById('receiptContent').style.display    = 'none';
+            document.getElementById('receiptItemList').innerHTML        = '';
+            // Restore footer bar buttons
+            document.getElementById('receiptFooterBar').innerHTML = `
+                <span id="receiptMatchStatus" class="receipt-match-status"></span>
+                <button class="btn btn-success" onclick="receiveStock()">Receive Stock &#8594;</button>`;
+            setStatus('Ready', '');
+        }
+
+        // Drag-and-drop on upload zone (wired after DOM is ready via inline call)
+        function setupReceiptDragDrop() {
+            const zone = document.getElementById('receiptUploadZone');
+            zone.addEventListener('dragover', e => { e.preventDefault(); zone.classList.add('drag-over'); });
+            zone.addEventListener('dragleave', () => zone.classList.remove('drag-over'));
+            zone.addEventListener('drop', e => {
+                e.preventDefault();
+                zone.classList.remove('drag-over');
+                const file = e.dataTransfer.files[0];
+                if (file) uploadReceiptPdf(file);
+            });
+        }
+        setupReceiptDragDrop();
 
         // ── UI helpers ───────────────────────────────────────────────────────
 

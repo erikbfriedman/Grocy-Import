@@ -1,6 +1,39 @@
+import io
 import os
+import re
+
 import requests
 from flask import Flask, render_template, request, jsonify
+
+try:
+    import fitz          # pymupdf
+    from PIL import Image
+    import pytesseract
+    _HAS_OCR = True
+except ImportError:
+    _HAS_OCR = False
+
+# Walmart online order format: "Description [status] Qty N $price"
+_WALMART_ONLINE_RE  = re.compile(r'^(.+?)\s+Qty\s+(\d+)\s+\$(\d+\.\d{2})\s*$')
+# Status words to strip from the end of descriptions in online orders
+_WALMART_STATUS_RE  = re.compile(
+    r'\s+(?:Shopped|Weight[\s\w→\-]*Adjusted|Adjusted|Not\s+Available|Weight[-\s]adjusted)\s*$',
+    re.IGNORECASE,
+)
+# In-store format: "<description>  <price> [optional single-letter tax code]"
+_RECEIPT_PRICE_RE   = re.compile(r'^(.+?)\s{2,}(\d+\.\d{2})\s*[A-Z]?\s*$')
+# In-store quantity prefix lines like "2 @ $1.98" or "3 X 0.89"
+_RECEIPT_QTY_RE     = re.compile(r'^(\d+)\s*[@xX]\s*\$?(\d+\.\d{2})\s*$')
+# Lines to skip in both formats
+_RECEIPT_SKIP_RE    = re.compile(
+    r'subtotal|tax|total|change due|cash|credit|debit|visa|mastercard|'
+    r'discover|amex|savings|balance|rewards?|e-receipt|thank you|walmart|'
+    r'store\s*#|\bTC\b|ebt|snap|wic|tender|amount due|amount paid|'
+    r'items?\s+sold|approval|auth\s*#|ref\s*#|terminal|your cashier|'
+    r'sc\s*#|transaction|phone|address|manager|driver\s*tip|delivery|'
+    r'^\*+$|^order\s*#|^buyer|invoice',
+    re.IGNORECASE,
+)
 
 app = Flask(__name__)
 
@@ -30,8 +63,8 @@ DEFAULT_COLUMNS = {
     'products': [
         'id', 'name', 'description', 'product_group_id', 'active',
         'location_id', 'shopping_location_id',
-        'quantity_unit_id_purchase', 'quantity_unit_id_stock',
-        'quantity_unit_factor_purchase_to_stock', 'min_stock_amount',
+        'qu_id_purchase', 'qu_id_stock',
+        'qu_factor_purchase_to_stock', 'min_stock_amount',
         'default_best_before_days', 'default_best_before_days_after_open',
         'default_best_before_days_after_freezing', 'default_best_before_days_after_thawing',
         'calories', 'enable_tare_weight_handling', 'tare_weight',
@@ -82,8 +115,11 @@ LINKED_FIELDS = {
     'location_id':                        {'entity': 'locations',         'label': 'name'},
     'shopping_location_id':               {'entity': 'shopping_locations','label': 'name'},
     'product_group_id':                   {'entity': 'product_groups',    'label': 'name'},
+    # Both naming conventions across Grocy versions
     'quantity_unit_id_purchase':          {'entity': 'quantity_units',    'label': 'name'},
     'quantity_unit_id_stock':             {'entity': 'quantity_units',    'label': 'name'},
+    'qu_id_purchase':                     {'entity': 'quantity_units',    'label': 'name'},
+    'qu_id_stock':                        {'entity': 'quantity_units',    'label': 'name'},
     'product_id':                         {'entity': 'products',          'label': 'name'},
     'parent_product_id':                  {'entity': 'products',          'label': 'name'},
     'qu_id':                              {'entity': 'quantity_units',    'label': 'name'},
@@ -108,19 +144,29 @@ def grocy_headers():
 
 def guess_entity_for_column(col_name):
     """
-    Try to infer what entity a _id column references by progressively
-    stripping leading words until we find a matching entity slug.
+    Try to infer what entity an FK column references.
 
-    e.g. shopping_location_id  → shopping_locations ✓
-         parent_product_id     → products ✓
-         assigned_to_user_id   → users ✓  (via 'user' → 'users')
+    Handles two patterns:
+      - trailing _id:     parent_product_id → products
+                          shopping_location_id → shopping_locations
+      - embedded _id_:    qu_id_purchase → quantity_units
+                          qu_id_stock    → quantity_units
+
+    Strategy: extract the word(s) before _id (or before _id_*), then
+    progressively strip leading words until we find a matching entity slug.
     """
-    if col_name == 'id' or not col_name.endswith('_id'):
+    if col_name == 'id':
         return None
 
-    base = col_name[:-3]          # strip trailing _id
-    parts = base.split('_')
+    # Extract the 'base' — the part that names the referenced entity
+    if col_name.endswith('_id'):
+        base = col_name[:-3]                        # strip trailing _id
+    elif '_id_' in col_name:
+        base = col_name[:col_name.index('_id_')]    # take the part before _id_
+    else:
+        return None
 
+    parts = base.split('_')
     for i in range(len(parts)):
         sub = '_'.join(parts[i:])
         for candidate in (sub + 's', sub):
@@ -306,6 +352,133 @@ def import_data(entity):
                 'row': row,
                 'error': str(e),
             })
+
+    return jsonify({'results': results})
+
+
+@app.route('/api/receipt/parse', methods=['POST'])
+def parse_receipt():
+    if not _HAS_OCR:
+        return jsonify({'error': 'OCR libraries not installed on server'}), 500
+    if 'file' not in request.files:
+        return jsonify({'error': 'No file uploaded'}), 400
+
+    items = []
+    try:
+        raw = request.files['file'].read()
+        doc = fitz.open(stream=raw, filetype='pdf')
+        all_lines = []
+        for page in doc:
+            # Try native text extraction first (works for text-based PDFs)
+            text = page.get_text('text')
+            if not text.strip():
+                # Fall back to OCR: render page at 3x zoom then run tesseract
+                mat = fitz.Matrix(3, 3)
+                pix = page.get_pixmap(matrix=mat)
+                img = Image.frombytes('RGB', [pix.width, pix.height], pix.samples)
+                text = pytesseract.image_to_string(img, config='--psm 6')
+            all_lines.extend(text.split('\n'))
+
+        # ── Walmart online order format ──────────────────────────────────────
+        # Lines look like: "Description [status] Qty N $price"
+        online_items = []
+        for line in all_lines:
+            line = line.strip()
+            if not line or _RECEIPT_SKIP_RE.search(line):
+                continue
+            m = _WALMART_ONLINE_RE.match(line)
+            if m:
+                raw_desc = m.group(1).strip()
+                desc     = _WALMART_STATUS_RE.sub('', raw_desc).strip()
+                qty      = int(m.group(2))
+                price    = float(m.group(3))
+                if len(desc) > 2:
+                    online_items.append({
+                        'description': desc,
+                        'price': price,
+                        'quantity': qty,
+                        'unit_price': round(price / qty, 2) if qty > 1 else price,
+                    })
+
+        if online_items:
+            items = online_items
+        else:
+            # ── In-store receipt format fallback ─────────────────────────────
+            i = 0
+            while i < len(all_lines):
+                line = all_lines[i].strip()
+                if not line or _RECEIPT_SKIP_RE.search(line):
+                    i += 1
+                    continue
+
+                qty_m = _RECEIPT_QTY_RE.match(line)
+                if qty_m and i + 1 < len(all_lines):
+                    nxt     = all_lines[i + 1].strip()
+                    price_m = _RECEIPT_PRICE_RE.match(nxt)
+                    if price_m and not _RECEIPT_SKIP_RE.search(nxt):
+                        desc = price_m.group(1).strip()
+                        if len(desc) > 2 and not re.match(r'^\d+$', desc):
+                            items.append({
+                                'description': desc,
+                                'price': float(price_m.group(2)),
+                                'quantity': int(qty_m.group(1)),
+                                'unit_price': float(qty_m.group(2)),
+                            })
+                        i += 2
+                        continue
+
+                price_m = _RECEIPT_PRICE_RE.match(line)
+                if price_m:
+                    desc = price_m.group(1).strip()
+                    if len(desc) > 2 and not _RECEIPT_SKIP_RE.search(desc) and not re.match(r'^\d+$', desc):
+                        items.append({
+                            'description': desc,
+                            'price': float(price_m.group(2)),
+                            'quantity': 1,
+                            'unit_price': float(price_m.group(2)),
+                        })
+                i += 1
+
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+    return jsonify({'items': items})
+
+
+@app.route('/api/stock/receive', methods=['POST'])
+def receive_stock():
+    payload = request.json or {}
+    results = []
+
+    for item in payload.get('items', []):
+        product_id = item.get('product_id')
+        if not product_id:
+            continue
+
+        body = {
+            'amount': item.get('amount', 1),
+            'transaction_type': 'purchase',
+        }
+        if item.get('shopping_location_id'):
+            body['shopping_location_id'] = item['shopping_location_id']
+
+        try:
+            resp = requests.post(
+                f"{GROCY_URL}/api/stock/products/{product_id}/add",
+                headers=grocy_headers(),
+                json=body,
+                timeout=10,
+            )
+            resp_body = None
+            if resp.content:
+                try:
+                    resp_body = resp.json()
+                except Exception:
+                    resp_body = resp.text
+            results.append({'product_id': product_id, 'ok': resp.ok,
+                            'status': resp.status_code, 'response': resp_body})
+        except Exception as e:
+            results.append({'product_id': product_id, 'ok': False, 'error': str(e)})
 
     return jsonify({'results': results})
 
