@@ -375,6 +375,25 @@ def receipt_status():
     })
 
 
+@app.route('/api/receipt/debug', methods=['POST'])
+def debug_receipt():
+    """Return raw OCR text for debugging — remove before production."""
+    if not _HAS_OCR:
+        return jsonify({'error': f'Missing: {", ".join(_OCR_MISSING)}'}), 500
+    if 'file' not in request.files:
+        return jsonify({'error': 'No file'}), 400
+    try:
+        raw   = request.files['file'].read()
+        pages = convert_from_bytes(raw, dpi=216)
+        lines = []
+        for img in pages:
+            text = pytesseract.image_to_string(img, config='--psm 6')
+            lines.extend(text.split('\n'))
+        return jsonify({'lines': lines})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
 @app.route('/api/receipt/parse', methods=['POST'])
 def parse_receipt():
     if not _HAS_OCR:
