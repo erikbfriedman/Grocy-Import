@@ -5,13 +5,20 @@ import re
 import requests
 from flask import Flask, render_template, request, jsonify
 
+_OCR_MISSING = []
 try:
     import fitz          # pymupdf
-    from PIL import Image
-    import pytesseract
-    _HAS_OCR = True
 except ImportError:
-    _HAS_OCR = False
+    _OCR_MISSING.append('pymupdf')
+try:
+    from PIL import Image
+except ImportError:
+    _OCR_MISSING.append('Pillow')
+try:
+    import pytesseract
+except ImportError:
+    _OCR_MISSING.append('pytesseract')
+_HAS_OCR = not _OCR_MISSING
 
 # Walmart online order format: "Description [status] Qty N $price"
 _WALMART_ONLINE_RE  = re.compile(r'^(.+?)\s+Qty\s+(\d+)\s+\$(\d+\.\d{2})\s*$')
@@ -356,10 +363,25 @@ def import_data(entity):
     return jsonify({'results': results})
 
 
+@app.route('/api/receipt/status')
+def receipt_status():
+    import subprocess
+    tess = 'ok'
+    try:
+        subprocess.run(['tesseract', '--version'], capture_output=True, timeout=5)
+    except Exception as e:
+        tess = str(e)
+    return jsonify({
+        'ocr_ready': _HAS_OCR and tess == 'ok',
+        'missing_packages': _OCR_MISSING,
+        'tesseract': tess,
+    })
+
+
 @app.route('/api/receipt/parse', methods=['POST'])
 def parse_receipt():
     if not _HAS_OCR:
-        return jsonify({'error': 'OCR libraries not installed on server'}), 500
+        return jsonify({'error': f'Missing Python packages: {", ".join(_OCR_MISSING)}'}), 500
     if 'file' not in request.files:
         return jsonify({'error': 'No file uploaded'}), 400
 
