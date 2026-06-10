@@ -1168,19 +1168,21 @@
                 </div>
                 <span class="ri-price">${qtyStr}${priceStr}</span>
                 <div class="ri-actions">${actionHtml}</div>`;
-            list.appendChild(card);
 
-            // New product form (hidden by default)
+            // Return a fragment so renderReceiptList can append card + optional form in one shot
+            const frag = document.createDocumentFragment();
+            frag.appendChild(card);
+
             if (item.status === 'new') {
                 const formWrap = document.createElement('div');
                 formWrap.id        = `ri-form-${idx}`;
                 formWrap.className = 'ri-new-form';
                 formWrap.style.display = 'none';
                 formWrap.innerHTML = buildNewProductForm(idx, item);
-                list.appendChild(formWrap);
+                frag.appendChild(formWrap);
             }
 
-            return card;
+            return frag;
         }
 
         function escHtml(s) {
