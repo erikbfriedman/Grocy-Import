@@ -2,6 +2,7 @@ import base64
 import io
 import json
 import os
+import re
 
 import requests
 from flask import Flask, render_template, request, jsonify
@@ -412,6 +413,74 @@ def parse_receipt():
         'total': float(data.get('total', 0) or 0),
         'items': items,
     })
+
+
+@app.route('/api/receipt/parse-text', methods=['POST'])
+def parse_receipt_text():
+    """
+    Parse copy-pasted Walmart online order text.
+
+    The Walmart order history page uses a consistent structure per item:
+        Product name (one or more lines)
+        Qty N  |  Wt X.XX lb
+        $X.XX
+        Add to cart
+        Write a review
+    """
+    text = (request.json or {}).get('text', '').strip()
+    if not text:
+        return jsonify({'error': 'No text provided'}), 400
+
+    items = []
+    # Split on the "Add to cart … Write a review" delimiter that Walmart places after each item
+    blocks = re.split(
+        r'Add\s+to\s+cart[\s\S]*?Write\s+a\s+review',
+        text,
+        flags=re.IGNORECASE,
+    )
+
+    for block in blocks:
+        # Strip blank lines and the leading item-count header ("38 items")
+        lines = [
+            l.strip() for l in block.split('\n')
+            if l.strip() and not re.match(r'^\d+\s+items?$', l.strip(), re.I)
+        ]
+        if len(lines) < 2:
+            continue
+
+        # Last line must be a price like "$4.68"
+        price_m = re.match(r'^\$([\d.]+)$', lines[-1])
+        if not price_m:
+            continue
+        price = float(price_m.group(1))
+
+        # Second-to-last is "Qty N" or "Wt X.XX lb" (both Walmart formats)
+        qty_m = re.match(r'^Qty\s+(\d+)$', lines[-2], re.I)
+        wt_m  = re.match(r'^Wt\s+([\d.]+)\s*lb', lines[-2], re.I)
+
+        if qty_m:
+            qty  = int(qty_m.group(1))
+            name = ' '.join(lines[:-2])
+        elif wt_m:
+            qty  = 1
+            name = ' '.join(lines[:-2])
+        else:
+            qty  = 1
+            name = ' '.join(lines[:-1])
+
+        if name and len(name) > 3:
+            items.append({
+                'description': name,
+                'price':       price,
+                'quantity':    qty,
+                'barcode':     None,
+            })
+
+    if not items:
+        return jsonify({'error': 'No items found — make sure to copy the full order list including "Add to cart / Write a review" lines'}), 400
+
+    total = round(sum(i['price'] * i['quantity'] for i in items), 2)
+    return jsonify({'store': '', 'date': '', 'total': total, 'items': items, 'source': 'order_text'})
 
 
 @app.route('/api/receipt/decode', methods=['POST'])

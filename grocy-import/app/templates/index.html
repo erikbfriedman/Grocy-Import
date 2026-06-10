@@ -410,11 +410,24 @@
         <!-- Receipt Import Panel -->
         <div class="receipt-panel" id="receiptPanel" style="display:none">
             <div class="receipt-upload-zone" id="receiptUploadZone">
-                <div>
+                <!-- PDF upload mode (default) -->
+                <div id="uploadModePdf">
                     <div class="receipt-upload-icon">🧾</div>
                     <div class="receipt-upload-headline">Drop Walmart receipt PDF here</div>
                     <div class="receipt-upload-sub">or <span class="upload-link" onclick="document.getElementById('receiptPdfFile').click()">browse to select a file</span></div>
-                    <div style="font-size:11px;color:var(--text-muted)">Requires Claude API key in add-on settings</div>
+                    <div style="font-size:11px;color:var(--text-muted);margin-top:6px">Requires Claude API key &nbsp;·&nbsp; <span class="upload-link" onclick="switchToTextMode()">paste order text instead</span></div>
+                </div>
+                <!-- Text paste mode -->
+                <div id="uploadModeText" style="display:none;width:100%;padding:20px 24px">
+                    <div style="font-size:13px;font-weight:500;margin-bottom:6px">Paste Walmart order text</div>
+                    <div style="font-size:11px;color:var(--text-muted);margin-bottom:10px">Copy the items section from your Walmart.com order and paste below — include the "Add to cart / Write a review" lines</div>
+                    <textarea id="orderTextArea" rows="10"
+                        style="width:100%;background:var(--surface2);color:var(--text);border:1px solid var(--border);border-radius:5px;padding:8px;font-size:12px;font-family:inherit;resize:vertical;outline:none"
+                        placeholder="38 items&#10;&#10;Fresh Strawberries, 2 lb Container&#10;Qty 1&#10;$4.32&#10;&#10;Add to cart&#10;Write a review&#10;&#10;..."></textarea>
+                    <div style="display:flex;gap:8px;margin-top:10px;align-items:center">
+                        <button class="btn btn-primary" onclick="parseOrderText()">Parse Items</button>
+                        <button class="btn" onclick="switchToPdfMode()">Upload PDF instead</button>
+                    </div>
                 </div>
                 <input type="file" id="receiptPdfFile" accept=".pdf" style="display:none" onchange="handleReceiptFile(event)">
             </div>
@@ -946,6 +959,96 @@
             }
         }
 
+        // ── Fuzzy name matching (used for order-text imports) ────────────────
+
+        function scoreMatch(receiptDesc, productName) {
+            const norm = s => s.toLowerCase().replace(/[^a-z0-9\s]/g, '').split(/\s+/).filter(Boolean);
+            const rw = norm(receiptDesc), pw = norm(productName);
+            if (!rw.length || !pw.length) return 0;
+            let score = 0;
+            for (const r of rw) for (const p of pw) {
+                if (p === r) score += 2;
+                else if (r.length > 2 && p.length > 2 && (p.startsWith(r) || r.startsWith(p))) score += 1;
+            }
+            return score / (rw.length + pw.length);
+        }
+
+        function findBestMatch(desc) {
+            let best = null, bestScore = 0;
+            for (const p of allProducts) {
+                const s = scoreMatch(desc, p.name);
+                if (s > bestScore) { bestScore = s; best = p; }
+            }
+            return bestScore >= 0.3 ? best : null;
+        }
+
+        // ── Text-paste mode ──────────────────────────────────────────────────
+
+        function switchToTextMode() {
+            document.getElementById('uploadModePdf').style.display  = 'none';
+            document.getElementById('uploadModeText').style.display = '';
+            document.getElementById('receiptUploadZone').style.cursor = 'default';
+        }
+
+        function switchToPdfMode() {
+            document.getElementById('uploadModeText').style.display = 'none';
+            document.getElementById('uploadModePdf').style.display  = '';
+            document.getElementById('receiptUploadZone').style.cursor = 'pointer';
+        }
+
+        async function parseOrderText() {
+            const text = (document.getElementById('orderTextArea').value || '').trim();
+            if (!text) { setStatus('Paste some order text first', 'error'); return; }
+
+            setStatus('Parsing order text…', 'loading');
+            try {
+                const resp   = await fetch(url('/api/receipt/parse-text'), {
+                    method:  'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body:    JSON.stringify({ text }),
+                });
+                const result = await resp.json();
+                if (!resp.ok || result.error) {
+                    setStatus('Parse failed: ' + (result.error || ''), 'error');
+                    return;
+                }
+
+                // Auto-match by fuzzy name — order text already has readable names
+                receiptItems = (result.items || []).map(item => {
+                    const match = findBestMatch(item.description);
+                    return {
+                        ...item,
+                        decoded_name: item.description,
+                        grocy_match:  match || null,
+                        status:       match ? 'matched' : 'new',
+                    };
+                });
+
+                if (!receiptItems.length) { setStatus('No items found', 'error'); return; }
+
+                document.getElementById('receiptUploadZone').style.display = 'none';
+                document.getElementById('receiptContent').style.display    = 'flex';
+
+                // Header meta
+                const matched = receiptItems.filter(i => i.status === 'matched').length;
+                const parts   = [
+                    `${receiptItems.length} items`,
+                    result.total ? `$${parseFloat(result.total).toFixed(2)}` : null,
+                    'order text',
+                ].filter(Boolean);
+                document.getElementById('receiptMeta').textContent = parts.join(' · ');
+
+                // Hide "Decode All" — names are already readable and auto-matched
+                document.getElementById('decodeAllBtn').style.display = 'none';
+
+                renderReceiptList();
+                updateStats();
+                setStatus(`${receiptItems.length} items — ${matched} auto-matched`, 'ok');
+            } catch (e) {
+                setStatus('Parse error: ' + e.message, 'error');
+            }
+        }
+
         // ── Decode All ───────────────────────────────────────────────────────
 
         async function decodeAll() {
@@ -1277,20 +1380,26 @@
 
         function resetReceipt() {
             receiptItems = [];
-            document.getElementById('receiptUploadZone').style.display = '';
-            document.getElementById('receiptContent').style.display    = 'none';
-            document.getElementById('receiptItemList').innerHTML        = '';
+            document.getElementById('receiptUploadZone').style.display  = '';
+            document.getElementById('receiptContent').style.display     = 'none';
+            document.getElementById('receiptItemList').innerHTML         = '';
+            document.getElementById('decodeAllBtn').style.display        = '';
+            document.getElementById('orderTextArea').value               = '';
+            switchToPdfMode();
             setStatus('Ready', '');
         }
 
-        // Drag-and-drop
+        // Drag-and-drop (PDF mode only)
         function setupReceiptDragDrop() {
             const zone = document.getElementById('receiptUploadZone');
-            zone.addEventListener('dragover', e => { e.preventDefault(); zone.classList.add('drag-over'); });
+            zone.addEventListener('dragover', e => {
+                if (document.getElementById('uploadModeText').style.display !== 'none') return;
+                e.preventDefault(); zone.classList.add('drag-over');
+            });
             zone.addEventListener('dragleave', () => zone.classList.remove('drag-over'));
             zone.addEventListener('drop', e => {
-                e.preventDefault();
-                zone.classList.remove('drag-over');
+                if (document.getElementById('uploadModeText').style.display !== 'none') return;
+                e.preventDefault(); zone.classList.remove('drag-over');
                 const file = e.dataTransfer.files[0];
                 if (file) uploadReceiptPdf(file);
             });
