@@ -3,6 +3,7 @@ set -e
 
 export GROCY_URL=$(bashio::config 'grocy_url')
 export GROCY_API_KEY=$(bashio::config 'grocy_api_key')
+export ANTHROPIC_API_KEY=$(bashio::config 'claude_api_key')
 
 bashio::log.info "Starting Grocy Import on port 8099..."
 

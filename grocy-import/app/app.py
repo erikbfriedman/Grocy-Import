@@ -1,47 +1,22 @@
+import base64
 import io
+import json
 import os
-import re
 
 import requests
 from flask import Flask, render_template, request, jsonify
 
-_OCR_MISSING = []
 try:
-    from pdf2image import convert_from_bytes
+    import anthropic as _anthropic_lib
+    _HAS_CLAUDE = True
 except ImportError:
-    _OCR_MISSING.append('pdf2image')
-try:
-    import pytesseract
-except ImportError:
-    _OCR_MISSING.append('pytesseract')
-_HAS_OCR = not _OCR_MISSING
-
-# Walmart online order format: "Description [status] Qty N $price"
-_WALMART_ONLINE_RE  = re.compile(r'^(.+?)\s+Qty\s+(\d+)\s+\$(\d+\.\d{2})\s*$')
-# Status words to strip from the end of descriptions in online orders
-_WALMART_STATUS_RE  = re.compile(
-    r'\s+(?:Shopped|Weight[\s\w→\-]*Adjusted|Adjusted|Not\s+Available|Weight[-\s]adjusted)\s*$',
-    re.IGNORECASE,
-)
-# In-store format: "<description>  <price> [optional single-letter tax code]"
-_RECEIPT_PRICE_RE   = re.compile(r'^(.+?)\s{2,}(\d+\.\d{2})\s*[A-Z]?\s*$')
-# In-store quantity prefix lines like "2 @ $1.98" or "3 X 0.89"
-_RECEIPT_QTY_RE     = re.compile(r'^(\d+)\s*[@xX]\s*\$?(\d+\.\d{2})\s*$')
-# Lines to skip in both formats
-_RECEIPT_SKIP_RE    = re.compile(
-    r'subtotal|tax|total|change due|cash|credit|debit|visa|mastercard|'
-    r'discover|amex|savings|balance|rewards?|e-receipt|thank you|walmart|'
-    r'store\s*#|\bTC\b|ebt|snap|wic|tender|amount due|amount paid|'
-    r'items?\s+sold|approval|auth\s*#|ref\s*#|terminal|your cashier|'
-    r'sc\s*#|transaction|phone|address|manager|driver\s*tip|delivery|'
-    r'^\*+$|^order\s*#|^buyer|invoice',
-    re.IGNORECASE,
-)
+    _HAS_CLAUDE = False
 
 app = Flask(__name__)
 
-GROCY_URL = os.environ.get('GROCY_URL', '').rstrip('/')
-GROCY_API_KEY = os.environ.get('GROCY_API_KEY', '')
+GROCY_URL         = os.environ.get('GROCY_URL', '').rstrip('/')
+GROCY_API_KEY     = os.environ.get('GROCY_API_KEY', '')
+ANTHROPIC_API_KEY = os.environ.get('ANTHROPIC_API_KEY', '')
 
 ENTITIES = {
     'products': 'Products',
@@ -361,120 +336,152 @@ def import_data(entity):
 
 @app.route('/api/receipt/status')
 def receipt_status():
-    import subprocess
-    tess = 'ok'
-    try:
-        subprocess.run(['tesseract', '--version'], capture_output=True, timeout=5)
-    except Exception as e:
-        tess = str(e)
     return jsonify({
-        'ocr_ready': _HAS_OCR and tess == 'ok',
-        'missing_packages': _OCR_MISSING,
-        'tesseract': tess,
-        'poppler': 'bundled with pdf2image',
+        'claude_ready':       _HAS_CLAUDE and bool(ANTHROPIC_API_KEY),
+        'anthropic_package':  _HAS_CLAUDE,
+        'api_key_configured': bool(ANTHROPIC_API_KEY),
     })
-
-
-@app.route('/api/receipt/debug', methods=['POST'])
-def debug_receipt():
-    """Return raw OCR text for debugging — remove before production."""
-    if not _HAS_OCR:
-        return jsonify({'error': f'Missing: {", ".join(_OCR_MISSING)}'}), 500
-    if 'file' not in request.files:
-        return jsonify({'error': 'No file'}), 400
-    try:
-        raw   = request.files['file'].read()
-        pages = convert_from_bytes(raw, dpi=216)
-        lines = []
-        for img in pages:
-            text = pytesseract.image_to_string(img, config='--psm 6')
-            lines.extend(text.split('\n'))
-        return jsonify({'lines': lines})
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
 
 
 @app.route('/api/receipt/parse', methods=['POST'])
 def parse_receipt():
-    if not _HAS_OCR:
-        return jsonify({'error': f'Missing Python packages: {", ".join(_OCR_MISSING)}'}), 500
+    if not _HAS_CLAUDE:
+        return jsonify({'error': 'anthropic package not installed'}), 500
+    if not ANTHROPIC_API_KEY:
+        return jsonify({'error': 'Claude API key not configured — add it in the add-on Configuration tab'}), 400
     if 'file' not in request.files:
         return jsonify({'error': 'No file uploaded'}), 400
 
-    items = []
+    raw    = request.files['file'].read()
+    pdf_b64 = base64.standard_b64encode(raw).decode('utf-8')
+
+    prompt = (
+        'Extract all purchased items from this Walmart receipt. '
+        'Return ONLY valid JSON, no other text:\n'
+        '{"store":"City, State","date":"MM/DD/YY","total":0.00,'
+        '"items":[{"description":"NAME","price":0.00,"quantity":1,"barcode":"012345678901"}]}\n\n'
+        'Rules:\n'
+        '- description: name as printed on receipt\n'
+        '- price: amount paid after discounts/rollbacks\n'
+        '- quantity: units purchased (default 1)\n'
+        '- barcode: UPC/item number if visible, else null\n'
+        '- Exclude taxes, totals, coupons, payments, fees — purchased items only'
+    )
+
     try:
-        raw = request.files['file'].read()
-        # Render all PDF pages to images at 216 DPI, then OCR each
-        pages = convert_from_bytes(raw, dpi=216)
-        all_lines = []
-        for img in pages:
-            text = pytesseract.image_to_string(img, config='--psm 6')
-            all_lines.extend(text.split('\n'))
-
-        # ── Walmart online order format ──────────────────────────────────────
-        # Lines look like: "Description [status] Qty N $price"
-        online_items = []
-        for line in all_lines:
-            line = line.strip()
-            if not line or _RECEIPT_SKIP_RE.search(line):
-                continue
-            m = _WALMART_ONLINE_RE.match(line)
-            if m:
-                raw_desc = m.group(1).strip()
-                desc     = _WALMART_STATUS_RE.sub('', raw_desc).strip()
-                qty      = int(m.group(2))
-                price    = float(m.group(3))
-                if len(desc) > 2:
-                    online_items.append({
-                        'description': desc,
-                        'price': price,
-                        'quantity': qty,
-                        'unit_price': round(price / qty, 2) if qty > 1 else price,
-                    })
-
-        if online_items:
-            items = online_items
-        else:
-            # ── In-store receipt format fallback ─────────────────────────────
-            i = 0
-            while i < len(all_lines):
-                line = all_lines[i].strip()
-                if not line or _RECEIPT_SKIP_RE.search(line):
-                    i += 1
-                    continue
-
-                qty_m = _RECEIPT_QTY_RE.match(line)
-                if qty_m and i + 1 < len(all_lines):
-                    nxt     = all_lines[i + 1].strip()
-                    price_m = _RECEIPT_PRICE_RE.match(nxt)
-                    if price_m and not _RECEIPT_SKIP_RE.search(nxt):
-                        desc = price_m.group(1).strip()
-                        if len(desc) > 2 and not re.match(r'^\d+$', desc):
-                            items.append({
-                                'description': desc,
-                                'price': float(price_m.group(2)),
-                                'quantity': int(qty_m.group(1)),
-                                'unit_price': float(qty_m.group(2)),
-                            })
-                        i += 2
-                        continue
-
-                price_m = _RECEIPT_PRICE_RE.match(line)
-                if price_m:
-                    desc = price_m.group(1).strip()
-                    if len(desc) > 2 and not _RECEIPT_SKIP_RE.search(desc) and not re.match(r'^\d+$', desc):
-                        items.append({
-                            'description': desc,
-                            'price': float(price_m.group(2)),
-                            'quantity': 1,
-                            'unit_price': float(price_m.group(2)),
-                        })
-                i += 1
-
+        client = _anthropic_lib.Anthropic(api_key=ANTHROPIC_API_KEY)
+        msg = client.messages.create(
+            model='claude-3-5-sonnet-20241022',
+            max_tokens=4096,
+            messages=[{
+                'role': 'user',
+                'content': [
+                    {
+                        'type': 'document',
+                        'source': {
+                            'type': 'base64',
+                            'media_type': 'application/pdf',
+                            'data': pdf_b64,
+                        },
+                    },
+                    {'type': 'text', 'text': prompt},
+                ],
+            }],
+        )
+        raw_text = msg.content[0].text.strip()
+        if raw_text.startswith('```'):
+            raw_text = '\n'.join(raw_text.split('\n')[1:]).rstrip('`').strip()
+        data = json.loads(raw_text)
+    except json.JSONDecodeError as e:
+        return jsonify({'error': f'Could not parse receipt structure: {e}'}), 500
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        return jsonify({'error': f'Receipt parsing error: {e}'}), 500
 
-    return jsonify({'items': items})
+    items = []
+    for item in data.get('items', []):
+        items.append({
+            'description': str(item.get('description', '')).strip(),
+            'price':       float(item.get('price', 0) or 0),
+            'quantity':    int(item.get('quantity', 1) or 1),
+            'barcode':     str(item['barcode']) if item.get('barcode') else None,
+        })
+
+    return jsonify({
+        'store': str(data.get('store', '')),
+        'date':  str(data.get('date', '')),
+        'total': float(data.get('total', 0) or 0),
+        'items': items,
+    })
+
+
+@app.route('/api/receipt/decode', methods=['POST'])
+def decode_receipt():
+    """Decode Walmart abbreviations with Claude, then barcode-match against Grocy."""
+    if not _HAS_CLAUDE:
+        return jsonify({'error': 'anthropic package not installed'}), 500
+    if not ANTHROPIC_API_KEY:
+        return jsonify({'error': 'Claude API key not configured'}), 400
+
+    items = (request.json or {}).get('items', [])
+    if not items:
+        return jsonify({'items': []}), 200
+
+    descriptions = [str(i.get('description', '')) for i in items]
+    desc_list    = '\n'.join(f'{n + 1}. {d}' for n, d in enumerate(descriptions))
+
+    try:
+        client = _anthropic_lib.Anthropic(api_key=ANTHROPIC_API_KEY)
+        msg = client.messages.create(
+            model='claude-3-5-haiku-20241022',
+            max_tokens=2048,
+            messages=[{
+                'role': 'user',
+                'content': (
+                    'These are Walmart receipt item names (possibly abbreviated). '
+                    'Return ONLY a JSON array of decoded product names — one string per item, same order.\n'
+                    'Example: ["Apple Juice 64oz","Bananas 3lb","Tide Pods 57ct"]\n\n'
+                    f'Items:\n{desc_list}'
+                ),
+            }],
+        )
+        raw_text = msg.content[0].text.strip()
+        if raw_text.startswith('```'):
+            raw_text = '\n'.join(raw_text.split('\n')[1:]).rstrip('`').strip()
+        decoded = json.loads(raw_text)
+        if not isinstance(decoded, list):
+            decoded = descriptions
+    except Exception:
+        decoded = descriptions
+
+    result_items = []
+    for i, item in enumerate(items):
+        decoded_name = str(decoded[i]) if i < len(decoded) else item.get('description', '')
+        updated = {**item, 'decoded_name': decoded_name, 'grocy_match': None, 'status': 'new'}
+
+        # Barcode lookup against Grocy
+        barcode = item.get('barcode')
+        if barcode and GROCY_URL and GROCY_API_KEY:
+            try:
+                r = requests.get(
+                    f'{GROCY_URL}/api/stock/products/by-barcode/{barcode}',
+                    headers=grocy_headers(),
+                    timeout=5,
+                )
+                if r.ok:
+                    d = r.json()
+                    product = d.get('product') if isinstance(d, dict) else None
+                    if product and product.get('id'):
+                        updated['grocy_match'] = {
+                            'id':   str(product['id']),
+                            'name': product.get('name', 'Unknown'),
+                        }
+                        updated['status'] = 'matched'
+            except Exception:
+                pass
+
+        result_items.append(updated)
+
+    return jsonify({'items': result_items})
 
 
 @app.route('/api/stock/receive', methods=['POST'])

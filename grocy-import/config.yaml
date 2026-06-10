@@ -1,6 +1,6 @@
 name: "Grocy Import"
 description: "Spreadsheet-style bulk importer for all major Grocy data tables"
-version: "1.2.7"
+version: "1.2.9"
 slug: grocy_import
 init: false
 arch:
@@ -12,9 +12,11 @@ arch:
 options:
   grocy_url: ""
   grocy_api_key: ""
+  claude_api_key: ""
 schema:
   grocy_url: str
   grocy_api_key: str
+  claude_api_key: str
 ingress: true
 ingress_port: 8099
 ingress_entry: /
