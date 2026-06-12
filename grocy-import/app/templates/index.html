@@ -1238,7 +1238,7 @@
             if (!el) return;
             const opening = el.style.display === 'none';
             // Close all open pickers
-            document.querySelectorAll('[id^="ri-link-"]').forEach(e => e.style.display = 'none');
+            document.querySelectorAll('.ri-link-picker').forEach(e => e.style.display = 'none');
             if (opening) {
                 el.style.display = 'block';
                 const input = document.getElementById(`ri-link-search-${idx}`);
