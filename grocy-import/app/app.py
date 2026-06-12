@@ -43,7 +43,7 @@ DEFAULT_COLUMNS = {
         'id', 'name', 'description', 'product_group_id', 'active',
         'location_id', 'shopping_location_id',
         'qu_id_purchase', 'qu_id_stock',
-        'qu_factor_purchase_to_stock', 'min_stock_amount',
+        'min_stock_amount',
         'default_best_before_days', 'default_best_before_days_after_open',
         'default_best_before_days_after_freezing', 'default_best_before_days_after_thawing',
         'calories', 'enable_tare_weight_handling', 'tare_weight',

@@ -1232,7 +1232,6 @@
             const optionalFields = [
                 { key: 'shopping_location_id',                label: 'Default Shopping Location' },
                 { key: 'parent_product_id',                   label: 'Parent Product' },
-                { key: 'qu_factor_purchase_to_stock',         label: 'QU Factor Purchase→Stock', type: 'number' },
                 { key: 'min_stock_amount',                    label: 'Min Stock Amount',          type: 'number' },
                 { key: 'default_best_before_days',            label: 'Best Before Days',          type: 'number' },
                 { key: 'default_best_before_days_after_open', label: 'Best Before (after open)',  type: 'number' },
@@ -1317,7 +1316,7 @@
 
             const payload = { name, qu_id_purchase, qu_id_stock, location_id };
             ['description','product_group_id','shopping_location_id','parent_product_id',
-             'qu_factor_purchase_to_stock','min_stock_amount','default_best_before_days',
+             'min_stock_amount','default_best_before_days',
              'default_best_before_days_after_open','calories','active'].forEach(f => {
                 const v = get(f); if (v) payload[f] = v;
             });
