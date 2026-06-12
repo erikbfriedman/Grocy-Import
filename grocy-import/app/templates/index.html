@@ -334,6 +334,15 @@
         .ri-status-new     { background: rgba(3,169,244,0.12);  color: #03a9f4; border: 1px solid rgba(3,169,244,0.25); }
         .ri-status-skipped { background: rgba(156,163,175,0.1); color: var(--text-muted); border: 1px solid var(--border); }
 
+        /* Link picker */
+        .ri-link-picker { border-top: 1px solid rgba(245,158,11,0.2); background: rgba(245,158,11,0.04); padding: 10px 14px; }
+        .ri-link-search { width: 100%; background: var(--surface2); border: 1px solid var(--border); color: var(--text); border-radius: 4px; padding: 6px 10px; font-size: 13px; }
+        .ri-link-search:focus { outline: none; border-color: var(--primary); }
+        .ri-link-results { max-height: 160px; overflow-y: auto; margin-top: 6px; border: 1px solid var(--border); border-radius: 4px; background: var(--surface); }
+        .ri-link-option { padding: 6px 10px; cursor: pointer; font-size: 13px; }
+        .ri-link-option:hover { background: var(--surface2); }
+        .ri-link-none { padding: 6px 10px; font-size: 12px; color: var(--text-muted); font-style: italic; }
+
         /* New product inline form */
         .ri-new-form { border-top: 1px solid rgba(3,169,244,0.2); background: rgba(3,169,244,0.04); padding: 14px 18px; }
         .ri-new-form-title { font-size: 10px; font-weight: 700; color: var(--primary); text-transform: uppercase; letter-spacing: 0.07em; margin-bottom: 10px; }
@@ -1150,6 +1159,9 @@
                     onclick="event.stopPropagation();toggleNewProductForm(${idx})">+ Create</button>`;
             }
             if (item.status !== 'skipped') {
+                const linkLabel = item.status === 'matched' ? 'Re-link' : 'Link';
+                actionHtml += `<button class="btn" style="font-size:11px;padding:2px 8px"
+                    onclick="event.stopPropagation();toggleLinkPicker(${idx})">${linkLabel}</button>`;
                 actionHtml += `<button class="btn" style="font-size:11px;padding:2px 8px"
                     onclick="event.stopPropagation();toggleSkip(${idx})">Skip</button>`;
             } else {
@@ -1182,6 +1194,18 @@
                 frag.appendChild(formWrap);
             }
 
+            if (item.status !== 'skipped') {
+                const linkWrap = document.createElement('div');
+                linkWrap.id        = `ri-link-${idx}`;
+                linkWrap.className = 'ri-link-picker';
+                linkWrap.style.display = 'none';
+                linkWrap.innerHTML = `
+                    <input id="ri-link-search-${idx}" class="ri-link-search" type="text"
+                        placeholder="Search Grocy products…" oninput="filterLinkOptions(${idx})">
+                    <div id="ri-link-results-${idx}" class="ri-link-results"></div>`;
+                frag.appendChild(linkWrap);
+            }
+
             return frag;
         }
 
@@ -1205,6 +1229,44 @@
             receiptItems.forEach(i => {
                 if (i.status === 'pending' || i.status === 'new') i.status = 'skipped';
             });
+            renderReceiptList();
+            updateStats();
+        }
+
+        function toggleLinkPicker(idx) {
+            const el = document.getElementById(`ri-link-${idx}`);
+            if (!el) return;
+            const opening = el.style.display === 'none';
+            // Close all open pickers
+            document.querySelectorAll('[id^="ri-link-"]').forEach(e => e.style.display = 'none');
+            if (opening) {
+                el.style.display = 'block';
+                const input = document.getElementById(`ri-link-search-${idx}`);
+                if (input) { input.value = ''; filterLinkOptions(idx); input.focus(); }
+            }
+        }
+
+        function filterLinkOptions(idx) {
+            const input   = document.getElementById(`ri-link-search-${idx}`);
+            const results = document.getElementById(`ri-link-results-${idx}`);
+            if (!input || !results) return;
+            const q = input.value.trim().toLowerCase();
+            const matches = (q
+                ? allProducts.filter(p => p.name.toLowerCase().includes(q))
+                : allProducts
+            ).slice(0, 40);
+            if (!matches.length) {
+                results.innerHTML = `<div class="ri-link-none">No products found</div>`;
+                return;
+            }
+            results.innerHTML = matches.map(p =>
+                `<div class="ri-link-option" onclick="linkProduct(${idx},'${escHtml(p.id)}',${JSON.stringify(p.name)})">${escHtml(p.name)}</div>`
+            ).join('');
+        }
+
+        function linkProduct(idx, id, name) {
+            receiptItems[idx].grocy_match = { id: String(id), name };
+            receiptItems[idx].status = 'matched';
             renderReceiptList();
             updateStats();
         }
