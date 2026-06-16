@@ -585,6 +585,13 @@
 
         // ── Build spreadsheet ────────────────────────────────────────────────
 
+        function emptyRow() {
+            const row = Array(currentCols.length).fill('');
+            const ai = currentCols.indexOf('active');
+            if (ai >= 0) row[ai] = '1';
+            return row;
+        }
+
         function buildSheet(columns, data, fieldSources) {
             const el = document.getElementById('spreadsheet');
             if (sheet) {
@@ -616,11 +623,9 @@
                         return v === null || v === undefined ? '' : String(v);
                     })
                 );
-                tableData = tableData.concat(
-                    Array(10).fill(null).map(() => Array(columns.length).fill(''))
-                );
+                tableData = tableData.concat(Array(10).fill(null).map(emptyRow));
             } else {
-                tableData = Array(50).fill(null).map(() => Array(columns.length).fill(''));
+                tableData = Array(50).fill(null).map(emptyRow);
             }
 
             const wrapH = document.querySelector('.grid-wrap').clientHeight;
@@ -754,7 +759,7 @@
         function clearGrid() {
             if (!sheet) return;
             suppressAutoSave = true;
-            sheet.setData(Array(50).fill(null).map(() => Array(currentCols.length).fill('')));
+            sheet.setData(Array(50).fill(null).map(emptyRow));
             suppressAutoSave = false;
             log('Grid cleared', 'info');
             setStatus('Cleared', '');
@@ -763,7 +768,7 @@
         function addRows(n) {
             if (!sheet) return;
             suppressAutoSave = true;
-            sheet.insertRow(Array(n).fill(null).map(() => Array(currentCols.length).fill('')));
+            sheet.insertRow(Array(n).fill(null).map(emptyRow));
             suppressAutoSave = false;
         }
 
@@ -822,14 +827,18 @@
 
             const data = sheet.getData();
             const rows = [];
-            data.forEach(row => {
+            const rowMap = []; // maps result index → sheet row index
+            data.forEach((row, sheetRowIdx) => {
                 const obj = {};
                 currentCols.forEach((col, i) => {
                     const v = row[i];
                     if (v !== '' && v !== null && v !== undefined) obj[col] = v;
                 });
                 const keys = Object.keys(obj);
-                if (keys.length > 0 && !(keys.length === 1 && keys[0] === 'id')) rows.push(obj);
+                if (keys.length > 0 && !(keys.length === 1 && keys[0] === 'id')) {
+                    rows.push(obj);
+                    rowMap.push(sheetRowIdx);
+                }
             });
 
             if (rows.length === 0) { log('Nothing to import', 'info'); return; }
@@ -846,15 +855,21 @@
                 });
                 const result = await resp.json();
                 let ok = 0, errs = 0;
+                const idColIdx = currentCols.indexOf('id');
+                suppressAutoSave = true;
                 result.results.forEach((r, i) => {
                     if (r.ok) {
                         ok++;
                         log(`Row ${i + 1}: ✓ ${r.status}${r.created_id ? ' → id=' + r.created_id : ''}`, 'ok');
+                        if (r.created_id && idColIdx >= 0) {
+                            sheet.setValueFromCoords(idColIdx, rowMap[i], String(r.created_id));
+                        }
                     } else {
                         errs++;
                         log(`Row ${i + 1}: ✗ ${r.status} — ${JSON.stringify(r.response || r.error || '')}`, 'error');
                     }
                 });
+                suppressAutoSave = false;
                 setStatus(`${ok} imported, ${errs} failed`, errs > 0 ? 'error' : 'ok');
             } catch (e) {
                 setStatus('Request failed', 'error');
