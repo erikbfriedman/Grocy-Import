@@ -3,322 +3,208 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Grocy Import</title>
+    <title>Grocy Tools</title>
     <link rel="stylesheet" href="{{ ingress_path }}/static/lib/jsuites.css">
     <link rel="stylesheet" href="{{ ingress_path }}/static/lib/jspreadsheet.css">
     <script src="{{ ingress_path }}/static/lib/jsuites.js"></script>
     <script src="{{ ingress_path }}/static/lib/jspreadsheet.js"></script>
     <style>
         :root {
-            --primary: #03a9f4;
-            --bg: #111827;
-            --surface: #1f2937;
-            --surface2: #374151;
-            --border: #4b5563;
-            --text: #f3f4f6;
-            --text-muted: #9ca3af;
-            --success: #10b981;
-            --error: #ef4444;
-            --warning: #f59e0b;
+            --primary:     #03a9f4;
+            --bg:          #111827;
+            --surface:     #1f2937;
+            --surface2:    #374151;
+            --border:      #4b5563;
+            --text:        #f3f4f6;
+            --text-muted:  #9ca3af;
+            --success:     #10b981;
+            --error:       #ef4444;
+            --warning:     #f59e0b;
+            --sidebar-w:   196px;
         }
         *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-        html, body {
-            height: 100%;
-            font-family: 'Roboto', -apple-system, BlinkMacSystemFont, sans-serif;
-            background: var(--bg);
-            color: var(--text);
-            font-size: 14px;
-        }
-        body { display: flex; flex-direction: column; overflow: hidden; }
+        html, body { height: 100%; font-family: 'Roboto', -apple-system, sans-serif; background: var(--bg); color: var(--text); font-size: 14px; overflow: hidden; }
 
-        .toolbar {
-            display: flex;
-            align-items: center;
-            gap: 6px;
-            padding: 10px 14px;
-            background: var(--surface);
-            border-bottom: 1px solid var(--border);
-            flex-shrink: 0;
-            flex-wrap: wrap;
-        }
-        .toolbar-title {
-            font-size: 15px;
-            font-weight: 600;
-            color: var(--primary);
-            white-space: nowrap;
-            margin-right: 4px;
-        }
-        .sep { width: 1px; height: 22px; background: var(--border); margin: 0 2px; flex-shrink: 0; }
+        /* ── App shell ─────────────────────────────────────────── */
+        .app-shell { display: flex; height: 100vh; }
 
+        /* ── Sidebar ───────────────────────────────────────────── */
+        .sidebar {
+            width: var(--sidebar-w); flex-shrink: 0;
+            background: var(--surface); border-right: 1px solid var(--border);
+            display: flex; flex-direction: column; overflow: hidden;
+        }
+        .sidebar-brand {
+            padding: 16px 16px 12px;
+            font-size: 15px; font-weight: 700; color: var(--primary);
+            border-bottom: 1px solid var(--border); flex-shrink: 0;
+        }
+        .sidebar-brand span { display: block; font-size: 10px; font-weight: 400; color: var(--text-muted); margin-top: 1px; }
+        .nav-section { padding: 14px 14px 4px; font-size: 10px; font-weight: 700; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.1em; }
+        .nav-item {
+            display: flex; align-items: center; gap: 10px;
+            padding: 9px 16px; cursor: pointer; font-size: 13px; color: var(--text-muted);
+            border-left: 3px solid transparent; transition: all 0.1s; user-select: none;
+        }
+        .nav-item:hover { color: var(--text); background: rgba(255,255,255,0.04); }
+        .nav-item.active { color: var(--primary); border-left-color: var(--primary); background: rgba(3,169,244,0.08); font-weight: 500; }
+        .nav-icon { font-size: 15px; width: 20px; text-align: center; flex-shrink: 0; }
+        .sidebar-status { margin-top: auto; padding: 10px 14px; border-top: 1px solid var(--border); font-size: 10px; color: var(--text-muted); }
+
+        /* ── Page area ─────────────────────────────────────────── */
+        .page-area { flex: 1; display: flex; flex-direction: column; overflow: hidden; min-width: 0; }
+        .page { display: none; flex: 1; flex-direction: column; overflow: hidden; min-height: 0; }
+        .page.active { display: flex; }
+
+        /* ── Page header ───────────────────────────────────────── */
+        .page-header {
+            display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+            padding: 10px 16px; background: var(--surface);
+            border-bottom: 1px solid var(--border); flex-shrink: 0;
+        }
+        .page-title { font-size: 16px; font-weight: 600; color: var(--text); margin-right: 6px; white-space: nowrap; }
+        .ph-sep { width: 1px; height: 20px; background: var(--border); margin: 0 2px; flex-shrink: 0; }
+
+        /* ── Shared controls ───────────────────────────────────── */
         select {
-            background: var(--surface2);
-            color: var(--text);
-            border: 1px solid var(--border);
-            border-radius: 6px;
-            padding: 5px 10px;
-            font-size: 13px;
-            cursor: pointer;
-            outline: none;
-            max-width: 200px;
+            background: var(--surface2); color: var(--text); border: 1px solid var(--border);
+            border-radius: 6px; padding: 5px 10px; font-size: 13px; cursor: pointer; outline: none;
         }
         select:focus { border-color: var(--primary); }
-
         .btn {
-            display: inline-flex;
-            align-items: center;
-            gap: 5px;
-            padding: 5px 12px;
-            border: 1px solid var(--border);
-            border-radius: 6px;
-            font-size: 12px;
-            font-weight: 500;
-            cursor: pointer;
-            white-space: nowrap;
-            background: var(--surface2);
-            color: var(--text-muted);
-            transition: all 0.12s;
-            line-height: 1.5;
+            display: inline-flex; align-items: center; gap: 5px;
+            padding: 5px 12px; border: 1px solid var(--border); border-radius: 6px;
+            font-size: 12px; font-weight: 500; cursor: pointer; white-space: nowrap;
+            background: var(--surface2); color: var(--text-muted); transition: all 0.12s; line-height: 1.5;
         }
         .btn:hover:not(:disabled) { color: var(--text); border-color: var(--text-muted); }
         .btn:disabled { opacity: 0.35; cursor: not-allowed; }
-        .btn-primary {
-            background: var(--primary);
-            color: #fff;
-            border-color: var(--primary);
-            font-size: 13px;
-            padding: 5px 16px;
-        }
+        .btn-primary { background: var(--primary); color: #fff; border-color: var(--primary); font-size: 13px; padding: 5px 16px; }
         .btn-primary:hover:not(:disabled) { filter: brightness(1.1); color: #fff; border-color: var(--primary); }
+        .btn-success { background: var(--success); color: #fff; border-color: var(--success); font-size: 13px; padding: 5px 16px; }
+        .btn-success:hover:not(:disabled) { filter: brightness(1.1); color: #fff; }
+        .btn-danger  { background: transparent; color: var(--error); border-color: var(--error); }
+        .btn-danger:hover:not(:disabled) { background: rgba(239,68,68,0.1); color: var(--error); }
 
-        .status {
-            margin-left: auto;
-            font-size: 11px;
-            color: var(--text-muted);
-            white-space: nowrap;
-            font-family: monospace;
-        }
-        .status.ok { color: var(--success); }
-        .status.error { color: var(--error); }
-        .status.loading { color: var(--warning); }
+        .status-pill { font-size: 11px; color: var(--text-muted); font-family: monospace; margin-left: auto; }
+        .status-pill.ok      { color: var(--success); }
+        .status-pill.error   { color: var(--error); }
+        .status-pill.loading { color: var(--warning); }
 
         .autosave-badge {
-            font-size: 10px;
-            padding: 2px 7px;
-            border-radius: 10px;
-            font-weight: 600;
-            opacity: 0;
-            transition: opacity 0.3s;
-            background: var(--success);
-            color: #fff;
-            flex-shrink: 0;
+            font-size: 10px; padding: 2px 7px; border-radius: 10px; font-weight: 600;
+            opacity: 0; transition: opacity 0.3s; background: var(--success); color: #fff; flex-shrink: 0;
         }
         .autosave-badge.visible { opacity: 1; }
-        .autosave-badge.error { background: var(--error); }
-        .autosave-badge.saving { background: var(--warning); }
-
-        .main {
-            flex: 1;
-            display: flex;
-            flex-direction: column;
-            overflow: hidden;
-            padding: 10px 12px;
-            gap: 8px;
-        }
+        .autosave-badge.error   { background: var(--error); }
+        .autosave-badge.saving  { background: var(--warning); }
 
         .notice {
-            display: flex;
-            align-items: center;
-            gap: 8px;
-            padding: 8px 12px;
-            background: rgba(245, 158, 11, 0.12);
-            border: 1px solid var(--warning);
-            border-radius: 6px;
-            font-size: 12px;
-            color: var(--warning);
-            flex-shrink: 0;
+            display: flex; align-items: center; gap: 8px; padding: 8px 12px; flex-shrink: 0;
+            background: rgba(245,158,11,0.12); border: 1px solid var(--warning);
+            border-radius: 6px; font-size: 12px; color: var(--warning); margin: 8px 12px 0;
         }
 
-        .grid-wrap {
-            flex: 1;
-            overflow: hidden;
-            border: 1px solid var(--border);
-            border-radius: 6px;
-            background: var(--surface);
-            min-height: 0;
+        /* ── Data tiles ────────────────────────────────────────── */
+        .tiles-row { display: flex; gap: 12px; padding: 12px 16px; flex-shrink: 0; flex-wrap: wrap; }
+        .tile {
+            flex: 1; min-width: 120px; background: var(--surface); border: 1px solid var(--border);
+            border-radius: 8px; padding: 12px 16px;
         }
+        .tile-value { font-size: 28px; font-weight: 700; color: var(--text); line-height: 1.1; }
+        .tile-label { font-size: 11px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.06em; margin-top: 4px; }
+        .tile.warn .tile-value  { color: var(--warning); }
+        .tile.alert .tile-value { color: var(--error); }
+        .tile.ok .tile-value    { color: var(--success); }
+
+        /* ── Generic table ─────────────────────────────────────── */
+        .table-wrap { flex: 1; overflow: auto; margin: 0 16px 16px; border: 1px solid var(--border); border-radius: 6px; min-height: 0; }
+        table.data-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+        table.data-table thead th {
+            background: var(--surface2); color: var(--text-muted); font-size: 10px; font-weight: 700;
+            text-transform: uppercase; letter-spacing: 0.05em; padding: 8px 12px;
+            border-bottom: 1px solid var(--border); white-space: nowrap; text-align: left; position: sticky; top: 0; z-index: 1;
+        }
+        table.data-table tbody tr { border-bottom: 1px solid var(--border); background: var(--surface); }
+        table.data-table tbody tr:last-child { border-bottom: none; }
+        table.data-table tbody tr:hover { background: rgba(255,255,255,0.03); }
+        table.data-table tbody td { padding: 0 12px; vertical-align: middle; }
+
+        /* ── Log panel ─────────────────────────────────────────── */
+        .log-panel {
+            height: 90px; overflow-y: auto; background: var(--surface);
+            border-top: 1px solid var(--border); padding: 6px 12px;
+            font-family: 'Courier New', monospace; font-size: 11px; flex-shrink: 0;
+        }
+        .log-entry { padding: 1px 0; line-height: 1.6; }
+        .log-entry.ok    { color: var(--success); }
+        .log-entry.error { color: var(--error); }
+        .log-entry.info  { color: var(--text-muted); }
+        .log-placeholder { color: var(--text-muted); font-style: italic; }
+
+        /* ══════════════════════════════════════════════════════════
+           MASTER DATA PAGE
+        ══════════════════════════════════════════════════════════ */
+        .defaults-bar {
+            display: flex; align-items: center; gap: 10px; padding: 6px 16px;
+            background: rgba(3,169,244,0.07); border-bottom: 1px solid rgba(3,169,244,0.18);
+            flex-shrink: 0; flex-wrap: wrap;
+        }
+        .defaults-bar-label { font-size: 10px; font-weight: 700; color: var(--primary); text-transform: uppercase; letter-spacing: 0.06em; white-space: nowrap; flex-shrink: 0; }
+        .defaults-fields { display: flex; flex-wrap: wrap; gap: 8px; flex: 1; }
+        .default-field { display: flex; align-items: center; gap: 4px; }
+        .default-field label { font-size: 11px; color: var(--text-muted); white-space: nowrap; }
+        .default-field select { padding: 3px 8px; font-size: 11px; max-width: 150px; }
+
+        .grid-wrap { flex: 1; overflow: hidden; border: 1px solid var(--border); border-radius: 6px; background: var(--surface); margin: 8px 12px; min-height: 0; }
         #spreadsheet { width: 100%; height: 100%; }
 
         /* jspreadsheet dark theme */
         .jexcel_content { background: var(--surface) !important; }
-        .jexcel > thead > tr > td {
-            background: var(--surface2) !important;
-            color: var(--text) !important;
-            border-color: var(--border) !important;
-            font-weight: 600 !important;
-            font-size: 11px !important;
-            text-transform: uppercase !important;
-            letter-spacing: 0.03em !important;
-        }
-        .jexcel > tbody > tr > td {
-            background: var(--surface) !important;
-            color: var(--text) !important;
-            border-color: var(--border) !important;
-            font-size: 13px !important;
-        }
-        .jexcel > tbody > tr > td:first-child {
-            background: var(--surface2) !important;
-            color: var(--text-muted) !important;
-        }
-        .jexcel > tbody > tr > td.readonly {
-            background: rgba(55, 65, 81, 0.6) !important;
-            color: var(--text-muted) !important;
-            font-style: italic !important;
-        }
-        .jexcel > tbody > tr > td.highlight,
-        .jexcel > tbody > tr > td.selected {
-            background: rgba(3, 169, 244, 0.18) !important;
-        }
+        .jexcel > thead > tr > td { background: var(--surface2) !important; color: var(--text) !important; border-color: var(--border) !important; font-weight: 600 !important; font-size: 11px !important; text-transform: uppercase !important; letter-spacing: 0.03em !important; }
+        .jexcel > tbody > tr > td { background: var(--surface) !important; color: var(--text) !important; border-color: var(--border) !important; font-size: 13px !important; }
+        .jexcel > tbody > tr > td:first-child { background: var(--surface2) !important; color: var(--text-muted) !important; }
+        .jexcel > tbody > tr > td.readonly { background: rgba(55,65,81,0.6) !important; color: var(--text-muted) !important; font-style: italic !important; }
+        .jexcel > tbody > tr > td.highlight, .jexcel > tbody > tr > td.selected { background: rgba(3,169,244,0.18) !important; }
         .jexcel_corner { background: var(--surface2) !important; border-color: var(--border) !important; }
-
-        /* dropdown picker dark theme */
-        .jdropdown-container {
-            background: var(--surface2) !important;
-            border-color: var(--border) !important;
-            color: var(--text) !important;
-        }
+        .jdropdown-container { background: var(--surface2) !important; border-color: var(--border) !important; color: var(--text) !important; }
         .jdropdown-item:hover { background: rgba(3,169,244,0.2) !important; }
         .jdropdown-item.selected { background: rgba(3,169,244,0.3) !important; }
-        .jdropdown-search input {
-            background: var(--bg) !important;
-            color: var(--text) !important;
-            border-color: var(--border) !important;
-        }
-
-        .log-panel {
-            height: 100px;
-            overflow-y: auto;
-            background: var(--surface);
-            border: 1px solid var(--border);
-            border-radius: 6px;
-            padding: 6px 10px;
-            font-family: 'Courier New', monospace;
-            font-size: 11px;
-            flex-shrink: 0;
-        }
-        .log-entry { padding: 1px 0; line-height: 1.6; }
-        .log-entry.ok { color: var(--success); }
-        .log-entry.error { color: var(--error); }
-        .log-entry.info { color: var(--text-muted); }
-        .log-placeholder { color: var(--text-muted); font-style: italic; }
-
+        .jdropdown-search input { background: var(--bg) !important; color: var(--text) !important; border-color: var(--border) !important; }
         #csvFile { display: none; }
 
-        /* Defaults bar */
-        .defaults-bar {
-            display: flex;
-            align-items: center;
-            gap: 10px;
-            padding: 6px 14px;
-            background: rgba(3, 169, 244, 0.07);
-            border-bottom: 1px solid rgba(3, 169, 244, 0.18);
-            flex-shrink: 0;
-            flex-wrap: wrap;
-        }
-        .defaults-bar-label {
-            font-size: 10px;
-            font-weight: 700;
-            color: var(--primary);
-            text-transform: uppercase;
-            letter-spacing: 0.06em;
-            white-space: nowrap;
-            flex-shrink: 0;
-        }
-        .defaults-fields {
-            display: flex;
-            flex-wrap: wrap;
-            gap: 8px;
-            flex: 1;
-        }
-        .default-field {
-            display: flex;
-            align-items: center;
-            gap: 4px;
-        }
-        .default-field label {
-            font-size: 11px;
-            color: var(--text-muted);
-            white-space: nowrap;
-        }
-        .default-field select {
-            background: var(--surface2);
-            color: var(--text);
-            border: 1px solid var(--border);
-            border-radius: 4px;
-            padding: 3px 8px;
-            font-size: 11px;
-            max-width: 150px;
-        }
-
-        /* ── Receipt Import ─────────────────────────────── */
-        .btn-success {
-            background: var(--success);
-            color: #fff;
-            border-color: var(--success);
-            font-size: 13px;
-            padding: 5px 16px;
-        }
-        .btn-success:hover:not(:disabled) { filter: brightness(1.1); color: #fff; border-color: var(--success); }
-
-        .receipt-panel {
-            flex: 1; display: flex; flex-direction: column; overflow: hidden; gap: 8px; min-height: 0;
-        }
+        /* ══════════════════════════════════════════════════════════
+           RECEIPTS PAGE
+        ══════════════════════════════════════════════════════════ */
+        .receipt-panel { flex: 1; display: flex; flex-direction: column; overflow: hidden; gap: 0; min-height: 0; padding: 8px 12px; }
         .receipt-upload-zone {
             flex: 1; display: flex; align-items: center; justify-content: center;
             border: 2px dashed var(--border); border-radius: 8px; cursor: pointer;
             transition: border-color 0.2s, background 0.2s; background: var(--surface); text-align: center;
         }
-        .receipt-upload-zone:hover, .receipt-upload-zone.drag-over {
-            border-color: var(--primary); background: rgba(3,169,244,0.05);
-        }
-        .receipt-upload-icon  { font-size: 42px; margin-bottom: 10px; }
+        .receipt-upload-zone:hover, .receipt-upload-zone.drag-over { border-color: var(--primary); background: rgba(3,169,244,0.05); }
+        .receipt-upload-icon { font-size: 42px; margin-bottom: 10px; }
         .receipt-upload-headline { font-size: 15px; margin-bottom: 6px; }
-        .receipt-upload-sub   { font-size: 12px; color: var(--text-muted); margin-bottom: 14px; }
-        .upload-link          { color: var(--primary); text-decoration: underline; cursor: pointer; }
+        .receipt-upload-sub { font-size: 12px; color: var(--text-muted); margin-bottom: 14px; }
+        .upload-link { color: var(--primary); text-decoration: underline; cursor: pointer; }
 
-        .receipt-content {
-            flex: 1; display: flex; flex-direction: column; overflow: hidden;
-            min-height: 0; border: 1px solid var(--border); border-radius: 6px;
-        }
-        .receipt-header-bar {
-            display: flex; align-items: center; justify-content: space-between; gap: 10px;
-            padding: 10px 14px; background: var(--surface); border-bottom: 1px solid var(--border);
-            flex-shrink: 0; flex-wrap: wrap;
-        }
+        .receipt-content { flex: 1; display: flex; flex-direction: column; overflow: hidden; min-height: 0; border: 1px solid var(--border); border-radius: 6px; }
+        .receipt-header-bar { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 10px 14px; background: var(--surface); border-bottom: 1px solid var(--border); flex-shrink: 0; flex-wrap: wrap; }
         .receipt-title { font-size: 15px; font-weight: 600; color: var(--text); }
         .receipt-meta  { font-size: 12px; color: var(--text-muted); margin-top: 2px; }
         .receipt-loc-label { font-size: 11px; color: var(--text-muted); display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
         .receipt-loc-label select { font-size: 11px; min-width: 160px; }
 
-        /* Stats bar */
         .receipt-stats-bar { display: flex; background: var(--surface); border-bottom: 1px solid var(--border); flex-shrink: 0; }
         .rs-stat { flex: 1; text-align: center; padding: 10px 6px; border-right: 1px solid var(--border); }
         .rs-stat:last-child { border-right: none; }
         .rs-count { font-size: 20px; font-weight: 700; color: var(--text); line-height: 1.2; }
         .rs-label { font-size: 10px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em; margin-top: 1px; }
 
-        /* Item list */
         .receipt-item-list { flex: 1; overflow-y: auto; background: var(--bg); min-height: 0; }
-        .ri-section-header {
-            font-size: 10px; font-weight: 700; color: var(--text-muted); text-transform: uppercase;
-            letter-spacing: 0.1em; padding: 8px 14px 4px; background: var(--bg);
-            position: sticky; top: 0; z-index: 1;
-        }
+        .ri-section-header { font-size: 10px; font-weight: 700; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.1em; padding: 8px 14px 4px; background: var(--bg); position: sticky; top: 0; z-index: 1; }
 
-        /* Item card */
-        .ri-card {
-            display: flex; align-items: center; gap: 12px; padding: 9px 14px;
-            border-bottom: 1px solid var(--border); background: var(--surface);
-        }
+        .ri-card { display: flex; align-items: center; gap: 12px; padding: 9px 14px; border-bottom: 1px solid var(--border); background: var(--surface); }
         .ri-card:last-child { border-bottom: none; }
         .ri-num   { font-size: 12px; color: var(--text-muted); width: 22px; text-align: right; flex-shrink: 0; }
         .ri-body  { flex: 1; min-width: 0; }
@@ -327,14 +213,12 @@
         .ri-price { font-size: 13px; color: var(--text); flex-shrink: 0; min-width: 52px; text-align: right; }
         .ri-actions { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
 
-        /* Status badges */
         .ri-status-badge { font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 10px; white-space: nowrap; }
         .ri-status-pending { background: rgba(245,158,11,0.12); color: #f59e0b; border: 1px solid rgba(245,158,11,0.25); }
         .ri-status-matched { background: rgba(16,185,129,0.12); color: #10b981; border: 1px solid rgba(16,185,129,0.25); }
         .ri-status-new     { background: rgba(3,169,244,0.12);  color: #03a9f4; border: 1px solid rgba(3,169,244,0.25); }
         .ri-status-skipped { background: rgba(156,163,175,0.1); color: var(--text-muted); border: 1px solid var(--border); }
 
-        /* Link picker */
         .ri-link-picker { border-top: 1px solid rgba(245,158,11,0.2); background: rgba(245,158,11,0.04); padding: 10px 14px; }
         .ri-link-search { width: 100%; background: var(--surface2); border: 1px solid var(--border); color: var(--text); border-radius: 4px; padding: 6px 10px; font-size: 13px; }
         .ri-link-search:focus { outline: none; border-color: var(--primary); }
@@ -343,17 +227,13 @@
         .ri-link-option:hover { background: var(--surface2); }
         .ri-link-none { padding: 6px 10px; font-size: 12px; color: var(--text-muted); font-style: italic; }
 
-        /* New product inline form */
         .ri-new-form { border-top: 1px solid rgba(3,169,244,0.2); background: rgba(3,169,244,0.04); padding: 14px 18px; }
         .ri-new-form-title { font-size: 10px; font-weight: 700; color: var(--primary); text-transform: uppercase; letter-spacing: 0.07em; margin-bottom: 10px; }
         .ri-form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 14px; }
         .ri-field { display: flex; flex-direction: column; gap: 3px; }
         .ri-field label { font-size: 10px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.04em; }
         .ri-field label .req { color: var(--error); margin-left: 1px; }
-        .ri-field input, .ri-field select, .ri-field textarea {
-            background: var(--surface2); color: var(--text); border: 1px solid var(--border);
-            border-radius: 5px; padding: 5px 9px; font-size: 12px; font-family: inherit; outline: none;
-        }
+        .ri-field input, .ri-field select, .ri-field textarea { background: var(--surface2); color: var(--text); border: 1px solid var(--border); border-radius: 5px; padding: 5px 9px; font-size: 12px; font-family: inherit; outline: none; }
         .ri-field input:focus, .ri-field select:focus, .ri-field textarea:focus { border-color: var(--primary); }
         .ri-field textarea { resize: vertical; min-height: 44px; }
         .ri-collapsible-toggle { display: flex; align-items: center; gap: 6px; margin: 10px 0 6px; font-size: 11px; color: var(--text-muted); cursor: pointer; user-select: none; }
@@ -361,1147 +241,1018 @@
         .ri-form-actions { display: flex; align-items: center; gap: 10px; margin-top: 12px; }
         .ri-form-error { font-size: 11px; color: var(--error); flex: 1; }
 
-        /* Footer bar */
-        .receipt-footer-bar {
-            display: flex; align-items: center; justify-content: space-between;
-            padding: 9px 14px; background: var(--surface); border-top: 1px solid var(--border); flex-shrink: 0;
-        }
+        .receipt-footer-bar { display: flex; align-items: center; justify-content: space-between; padding: 9px 14px; background: var(--surface); border-top: 1px solid var(--border); flex-shrink: 0; }
         .receipt-match-status { font-size: 12px; color: var(--text-muted); }
+
+        /* ══════════════════════════════════════════════════════════
+           STOCK PAGE
+        ══════════════════════════════════════════════════════════ */
+        .stock-empty { flex: 1; display: flex; align-items: center; justify-content: center; color: var(--text-muted); font-size: 13px; }
+
+        /* ══════════════════════════════════════════════════════════
+           INVENTORY PAGE
+        ══════════════════════════════════════════════════════════ */
+        /* Inventory table rows are padded to accommodate the large count input */
+        #invTable tbody td { padding: 10px 12px; }
+        .inv-qty-cell { width: 140px; }
+        .inv-qty-input {
+            width: 110px; font-size: 22px; font-weight: 700; text-align: center;
+            padding: 6px 10px; background: var(--surface2);
+            border: 2px solid var(--border); border-radius: 6px; color: var(--text); outline: none;
+            transition: border-color 0.15s;
+        }
+        .inv-qty-input:focus { border-color: var(--primary); }
+        .inv-qty-input.changed { border-color: var(--warning); background: rgba(245,158,11,0.08); }
+        .inv-bbe-input {
+            background: var(--surface2); border: 1px solid var(--border); color: var(--text);
+            border-radius: 5px; padding: 5px 8px; font-size: 12px; outline: none; width: 130px;
+        }
+        .inv-bbe-input:focus { border-color: var(--primary); }
+        .inv-note-input {
+            background: var(--surface2); border: 1px solid var(--border); color: var(--text);
+            border-radius: 5px; padding: 5px 8px; font-size: 12px; outline: none; width: 100%;
+        }
+        .inv-current { font-size: 18px; font-weight: 600; color: var(--text-muted); }
     </style>
 </head>
 <body>
-    <div class="toolbar">
-        <span class="toolbar-title">Grocy Import</span>
+<div class="app-shell">
 
-        <select id="entitySelect" onchange="onEntityChange()">
-            {% for key, label in entities.items() %}
-            <option value="{{ key }}">{{ label }}</option>
-            {% endfor %}
-        </select>
+    <!-- ── Sidebar ─────────────────────────────────────────────── -->
+    <nav class="sidebar">
+        <div class="sidebar-brand">Grocy Tools<span>Home Assistant Add-on</span></div>
 
-        <div class="sep"></div>
-
-        <button class="btn" onclick="loadExisting()">Load Existing</button>
-        <button class="btn" onclick="addRows(10)">+ 10 Rows</button>
-        <button class="btn" onclick="clearGrid()">Clear</button>
-
-        <div class="sep"></div>
-
-        <button class="btn" onclick="document.getElementById('csvFile').click()">Upload CSV</button>
-        <button class="btn" onclick="downloadCsv()">Download CSV</button>
-        <input type="file" id="csvFile" accept=".csv" onchange="uploadCsv(event)">
-
-        <div class="sep"></div>
-
-        <button class="btn" id="receiptModeBtn" onclick="toggleReceiptMode()">&#129534; Walmart Receipt</button>
-
-        <div class="sep"></div>
-
-        <button class="btn btn-primary" onclick="importAll()">Import All &rarr;</button>
-        <span class="autosave-badge" id="autosaveBadge">saved</span>
-        <span class="status" id="statusBadge"></span>
-    </div>
-
-    <div class="defaults-bar" id="defaultsBar" style="display:none">
-        <span class="defaults-bar-label">Defaults</span>
-        <div class="defaults-fields" id="defaultsFields"></div>
-        <button class="btn" style="flex-shrink:0" onclick="clearDefaults()">Clear</button>
-    </div>
-
-    <div class="main">
-        <div id="configNotice" class="notice" style="display:none">
-            &#9888; Grocy is not configured. Go to the add-on <strong>Configuration</strong> tab and set your Grocy URL and API key.
+        <div class="nav-section">Activities</div>
+        <div class="nav-item" data-page="receipts" onclick="showPage('receipts')">
+            <span class="nav-icon">🧾</span> Receipts
         </div>
-        <div class="grid-wrap" id="gridWrap">
-            <div id="spreadsheet"></div>
+        <div class="nav-item" data-page="inventory" onclick="showPage('inventory')">
+            <span class="nav-icon">📋</span> Inventory
         </div>
 
-        <!-- Receipt Import Panel -->
-        <div class="receipt-panel" id="receiptPanel" style="display:none">
-            <div class="receipt-upload-zone" id="receiptUploadZone">
-                <!-- PDF upload mode (default) -->
-                <div id="uploadModePdf">
-                    <div class="receipt-upload-icon">🧾</div>
-                    <div class="receipt-upload-headline">Drop Walmart receipt PDF here</div>
-                    <div class="receipt-upload-sub">or <span class="upload-link" onclick="document.getElementById('receiptPdfFile').click()">browse to select a file</span></div>
-                    <div style="font-size:11px;color:var(--text-muted);margin-top:6px">Requires Claude API key &nbsp;·&nbsp; <span class="upload-link" onclick="switchToTextMode()">paste order text instead</span></div>
-                </div>
-                <!-- Text paste mode -->
-                <div id="uploadModeText" style="display:none;width:100%;padding:20px 24px">
-                    <div style="font-size:13px;font-weight:500;margin-bottom:6px">Paste Walmart order text</div>
-                    <div style="font-size:11px;color:var(--text-muted);margin-bottom:10px">Copy the items section from your Walmart.com order and paste below — include the "Add to cart / Write a review" lines</div>
-                    <textarea id="orderTextArea" rows="10"
-                        style="width:100%;background:var(--surface2);color:var(--text);border:1px solid var(--border);border-radius:5px;padding:8px;font-size:12px;font-family:inherit;resize:vertical;outline:none"
-                        placeholder="38 items&#10;&#10;Fresh Strawberries, 2 lb Container&#10;Qty 1&#10;$4.32&#10;&#10;Add to cart&#10;Write a review&#10;&#10;..."></textarea>
-                    <div style="display:flex;gap:8px;margin-top:10px;align-items:center">
-                        <button class="btn btn-primary" onclick="parseOrderText()">Parse Items</button>
-                        <button class="btn" onclick="switchToPdfMode()">Upload PDF instead</button>
-                    </div>
-                </div>
-                <input type="file" id="receiptPdfFile" accept=".pdf" style="display:none" onchange="handleReceiptFile(event)">
+        <div class="nav-section">Reference</div>
+        <div class="nav-item" data-page="stock" onclick="showPage('stock')">
+            <span class="nav-icon">📦</span> Stock
+        </div>
+        <div class="nav-item" data-page="masterdata" onclick="showPage('masterdata')">
+            <span class="nav-icon">🗂️</span> Master Data
+        </div>
+
+        <div class="sidebar-status" id="sidebarStatus"></div>
+    </nav>
+
+    <!-- ── Page area ───────────────────────────────────────────── -->
+    <div class="page-area">
+
+        <!-- ════════════════════════════════════════════════════════
+             RECEIPTS PAGE
+        ════════════════════════════════════════════════════════ -->
+        <div class="page" id="page-receipts">
+            <div class="page-header">
+                <span class="page-title">Receipts</span>
+                <div class="ph-sep"></div>
+                <label class="receipt-loc-label">
+                    Walmart store:
+                    <select id="walmartLocSelect"><option value="">Loading…</option></select>
+                </label>
+                <button class="btn btn-primary" id="decodeAllBtn" onclick="decodeAll()" style="display:none">Decode All</button>
+                <button class="btn" id="resetReceiptBtn" onclick="resetReceipt()" style="display:none">← New Receipt</button>
+                <span class="status-pill" id="receiptStatus"></span>
             </div>
-            <div class="receipt-content" id="receiptContent" style="display:none">
-                <div class="receipt-header-bar">
-                    <div>
-                        <div class="receipt-title">Walmart receipt import</div>
-                        <div class="receipt-meta" id="receiptMeta"></div>
+
+            <div class="receipt-panel">
+                <div class="receipt-upload-zone" id="receiptUploadZone">
+                    <div id="uploadModePdf">
+                        <div class="receipt-upload-icon">🧾</div>
+                        <div class="receipt-upload-headline">Drop Walmart receipt PDF here</div>
+                        <div class="receipt-upload-sub">or <span class="upload-link" onclick="document.getElementById('receiptPdfFile').click()">browse to select a file</span></div>
+                        <div style="font-size:11px;color:var(--text-muted);margin-top:6px">Requires Claude API key &nbsp;·&nbsp; <span class="upload-link" onclick="switchToTextMode()">paste order text instead</span></div>
                     </div>
-                    <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
-                        <label class="receipt-loc-label">
-                            Walmart store:
-                            <select id="walmartLocSelect"><option value="">Loading…</option></select>
-                        </label>
-                        <button class="btn btn-primary" id="decodeAllBtn" onclick="decodeAll()">Decode All</button>
-                        <button class="btn" onclick="resetReceipt()">&#8592; New Receipt</button>
+                    <div id="uploadModeText" style="display:none;width:100%;padding:20px 24px">
+                        <div style="font-size:13px;font-weight:500;margin-bottom:6px">Paste Walmart order text</div>
+                        <div style="font-size:11px;color:var(--text-muted);margin-bottom:10px">Copy the items section from your Walmart.com order — include the "Add to cart / Write a review" lines</div>
+                        <textarea id="orderTextArea" rows="10"
+                            style="width:100%;background:var(--surface2);color:var(--text);border:1px solid var(--border);border-radius:5px;padding:8px;font-size:12px;font-family:inherit;resize:vertical;outline:none"
+                            placeholder="38 items&#10;&#10;Fresh Strawberries, 2 lb Container&#10;Qty 1&#10;$4.32&#10;&#10;Add to cart&#10;Write a review&#10;&#10;..."></textarea>
+                        <div style="display:flex;gap:8px;margin-top:10px;align-items:center">
+                            <button class="btn btn-primary" onclick="parseOrderText()">Parse Items</button>
+                            <button class="btn" onclick="switchToPdfMode()">Upload PDF instead</button>
+                        </div>
                     </div>
+                    <input type="file" id="receiptPdfFile" accept=".pdf" style="display:none" onchange="handleReceiptFile(event)">
                 </div>
-                <div class="receipt-stats-bar">
-                    <div class="rs-stat"><div class="rs-count" id="statMatched">0</div><div class="rs-label">Matched</div></div>
-                    <div class="rs-stat"><div class="rs-count" id="statNew">0</div><div class="rs-label">New Items</div></div>
-                    <div class="rs-stat"><div class="rs-count" id="statPending">0</div><div class="rs-label">Pending</div></div>
-                    <div class="rs-stat"><div class="rs-count" id="statSkipped">0</div><div class="rs-label">Skipped</div></div>
-                </div>
-                <div id="receiptItemList" class="receipt-item-list"></div>
-                <div class="receipt-footer-bar">
-                    <span id="receiptMatchStatus" class="receipt-match-status">0 items ready to import · 0 skipped</span>
-                    <div style="display:flex;gap:8px">
-                        <button class="btn" onclick="skipAllPending()">Skip all pending</button>
-                        <button class="btn btn-success" onclick="importToGrocy()">Import to Grocy &#8594;</button>
+
+                <div class="receipt-content" id="receiptContent" style="display:none">
+                    <div class="receipt-header-bar">
+                        <div>
+                            <div class="receipt-title">Walmart receipt import</div>
+                            <div class="receipt-meta" id="receiptMeta"></div>
+                        </div>
+                    </div>
+                    <div class="receipt-stats-bar">
+                        <div class="rs-stat"><div class="rs-count" id="statMatched">0</div><div class="rs-label">Matched</div></div>
+                        <div class="rs-stat"><div class="rs-count" id="statNew">0</div><div class="rs-label">New Items</div></div>
+                        <div class="rs-stat"><div class="rs-count" id="statPending">0</div><div class="rs-label">Pending</div></div>
+                        <div class="rs-stat"><div class="rs-count" id="statSkipped">0</div><div class="rs-label">Skipped</div></div>
+                    </div>
+                    <div id="receiptItemList" class="receipt-item-list"></div>
+                    <div class="receipt-footer-bar">
+                        <span id="receiptMatchStatus" class="receipt-match-status">0 items ready · 0 skipped</span>
+                        <div style="display:flex;gap:8px">
+                            <button class="btn" onclick="skipAllPending()">Skip all pending</button>
+                            <button class="btn btn-success" onclick="importToGrocy()">Import to Grocy →</button>
+                        </div>
                     </div>
                 </div>
             </div>
         </div>
 
-        <div class="log-panel" id="logPanel">
-            <div class="log-placeholder">Changes are saved automatically. Import log appears here.</div>
+        <!-- ════════════════════════════════════════════════════════
+             INVENTORY PAGE
+        ════════════════════════════════════════════════════════ -->
+        <div class="page" id="page-inventory">
+            <div class="page-header">
+                <span class="page-title">Inventory</span>
+                <div class="ph-sep"></div>
+                <select id="invAreaSelect" onchange="loadInventory()"><option value="">— select area —</option></select>
+                <button class="btn btn-success" onclick="submitCorrections()" id="invSubmitBtn" disabled>Submit Corrections</button>
+                <span class="status-pill" id="invStatus"></span>
+            </div>
+
+            <div class="tiles-row" id="invTiles">
+                <div class="tile"><div class="tile-value" id="invTileTotal">—</div><div class="tile-label">Items in Area</div></div>
+                <div class="tile ok"><div class="tile-value" id="invTileCounted">—</div><div class="tile-label">Counted</div></div>
+                <div class="tile"><div class="tile-value" id="invTileRemaining">—</div><div class="tile-label">Remaining</div></div>
+                <div class="tile warn"><div class="tile-value" id="invTileDiscrepancy">—</div><div class="tile-label">Discrepancies</div></div>
+            </div>
+
+            <div class="table-wrap">
+                <table class="data-table" id="invTable">
+                    <thead>
+                        <tr>
+                            <th>Product</th>
+                            <th style="text-align:center">Current</th>
+                            <th style="text-align:center">Count</th>
+                            <th>Best Before</th>
+                            <th>Note</th>
+                        </tr>
+                    </thead>
+                    <tbody id="invBody">
+                        <tr><td colspan="5" style="text-align:center;color:var(--text-muted);padding:24px">Select an area to load inventory</td></tr>
+                    </tbody>
+                </table>
+            </div>
         </div>
-    </div>
 
-    <script>
-        const BASE = '{{ ingress_path | safe }}';
-        function url(path) { return BASE + path; }
+        <!-- ════════════════════════════════════════════════════════
+             STOCK PAGE
+        ════════════════════════════════════════════════════════ -->
+        <div class="page" id="page-stock">
+            <div class="page-header">
+                <span class="page-title">Stock</span>
+                <div class="ph-sep"></div>
+                <select id="stockAreaSelect" onchange="loadStock()"><option value="">— select area —</option></select>
+                <button class="btn" onclick="loadStock()">Refresh</button>
+                <span class="status-pill" id="stockStatus"></span>
+            </div>
 
-        let sheet = null;
-        let currentCols = [];
-        let currentFieldSources = {};
-        let currentEntity = document.getElementById('entitySelect').value;
-        let suppressAutoSave = false;
-        let currentDefaults = {};
+            <div class="tiles-row">
+                <div class="tile"><div class="tile-value" id="stockTileItems">—</div><div class="tile-label">Items in Area</div></div>
+                <div class="tile alert"><div class="tile-value" id="stockTileExp7">—</div><div class="tile-label">Expiring ≤ 7 days</div></div>
+                <div class="tile warn"><div class="tile-value" id="stockTileExp30">—</div><div class="tile-label">Expiring ≤ 30 days</div></div>
+                <div class="tile"><div class="tile-value" id="stockTileEntries">—</div><div class="tile-label">Stock Entries</div></div>
+            </div>
 
-        const saveTimers = {};
-        let autosaveFadeTimer = null;
+            <div class="table-wrap">
+                <table class="data-table" id="stockTable">
+                    <thead>
+                        <tr>
+                            <th>Product</th>
+                            <th>Qty</th>
+                            <th>Unit</th>
+                            <th>Best Before</th>
+                            <th>Purchased</th>
+                            <th style="width:60px"></th>
+                        </tr>
+                    </thead>
+                    <tbody id="stockBody">
+                        <tr><td colspan="6" style="text-align:center;color:var(--text-muted);padding:24px">Select an area to view stock</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
 
-        // ── Boot ────────────────────────────────────────────────────────────
+        <!-- ════════════════════════════════════════════════════════
+             MASTER DATA PAGE
+        ════════════════════════════════════════════════════════ -->
+        <div class="page" id="page-masterdata">
+            <div class="page-header">
+                <span class="page-title">Master Data</span>
+                <div class="ph-sep"></div>
+                <select id="entitySelect" onchange="onEntityChange()">
+                    {% for key, label in entities.items() %}
+                    <option value="{{ key }}">{{ label }}</option>
+                    {% endfor %}
+                </select>
+                <div class="ph-sep"></div>
+                <button class="btn" onclick="loadExisting()">Load Existing</button>
+                <button class="btn" onclick="addRows(10)">+ 10 Rows</button>
+                <button class="btn" onclick="clearGrid()">Clear</button>
+                <div class="ph-sep"></div>
+                <button class="btn" onclick="document.getElementById('csvFile').click()">Upload CSV</button>
+                <button class="btn" onclick="downloadCsv()">Download CSV</button>
+                <input type="file" id="csvFile" accept=".csv" onchange="uploadCsv(event)">
+                <div class="ph-sep"></div>
+                <button class="btn btn-primary" onclick="importAll()">Import All →</button>
+                <span class="autosave-badge" id="autosaveBadge">saved</span>
+                <span class="status-pill" id="mdStatus"></span>
+            </div>
 
-        checkConfig();
-        loadSchema(false);
+            <div class="defaults-bar" id="defaultsBar" style="display:none">
+                <span class="defaults-bar-label">Defaults</span>
+                <div class="defaults-fields" id="defaultsFields"></div>
+                <button class="btn" style="flex-shrink:0" onclick="clearDefaults()">Clear</button>
+            </div>
 
-        // ── Config check ────────────────────────────────────────────────────
+            <div id="configNotice" class="notice" style="display:none">
+                ⚠ Grocy is not configured. Go to the add-on <strong>Configuration</strong> tab and set your Grocy URL and API key.
+            </div>
 
-        async function checkConfig() {
-            try {
-                const r = await fetch(url('/api/config'));
-                const cfg = await r.json();
-                document.getElementById('configNotice').style.display = cfg.configured ? 'none' : 'flex';
-            } catch {}
+            <div class="grid-wrap" id="gridWrap">
+                <div id="spreadsheet"></div>
+            </div>
+
+            <div class="log-panel" id="logPanel">
+                <div class="log-placeholder">Changes are saved automatically. Import log appears here.</div>
+            </div>
+        </div>
+
+    </div><!-- /page-area -->
+</div><!-- /app-shell -->
+
+<script>
+    const BASE = '{{ ingress_path | safe }}';
+    function url(path) { return BASE + path; }
+
+    // ── Page router ──────────────────────────────────────────────
+    let activePage = null;
+
+    function showPage(name) {
+        document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+        document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+        document.getElementById('page-' + name).classList.add('active');
+        document.querySelector(`.nav-item[data-page="${name}"]`).classList.add('active');
+        activePage = name;
+        if (name === 'receipts' && !receiptInitDone) initReceiptMode();
+        if (name === 'stock' || name === 'inventory') {
+            if (!areaLocations.length) loadAreaLocations();
         }
+    }
 
-        // ── Entity change ───────────────────────────────────────────────────
+    // ── Shared area locations ────────────────────────────────────
+    let areaLocations = [];
 
-        async function onEntityChange() {
-            currentEntity = document.getElementById('entitySelect').value;
-            await loadSchema(false);
+    async function loadAreaLocations() {
+        try {
+            const r = await fetch(url('/api/schema/locations?withData=1'));
+            const d = await r.json();
+            areaLocations = d.data || [];
+            const opts = `<option value="">— select area —</option>` +
+                areaLocations.map(l => `<option value="${l.id}">${l.name}</option>`).join('');
+            document.getElementById('stockAreaSelect').innerHTML = opts;
+            document.getElementById('invAreaSelect').innerHTML   = opts;
+        } catch {}
+    }
+
+    // ══════════════════════════════════════════════════════════════
+    //  STOCK PAGE
+    // ══════════════════════════════════════════════════════════════
+    let stockEntries = [];
+
+    async function loadStock() {
+        const locId = document.getElementById('stockAreaSelect').value;
+        const status = document.getElementById('stockStatus');
+        if (!locId) { renderStockTable([]); return; }
+        status.textContent = 'Loading…'; status.className = 'status-pill loading';
+        try {
+            const r = await fetch(url('/api/stock/entries?location_id=' + locId));
+            stockEntries = await r.json();
+            if (!Array.isArray(stockEntries)) stockEntries = [];
+            renderStockTable(stockEntries);
+            status.textContent = `${stockEntries.length} entries`; status.className = 'status-pill ok';
+        } catch (e) {
+            status.textContent = 'Error: ' + e.message; status.className = 'status-pill error';
         }
+    }
 
-        // ── Schema + lookups ────────────────────────────────────────────────
+    function renderStockTable(entries) {
+        const body = document.getElementById('stockBody');
+        const today = new Date(); today.setHours(0,0,0,0);
+        const d7  = new Date(today); d7.setDate(d7.getDate() + 7);
+        const d30 = new Date(today); d30.setDate(d30.getDate() + 30);
 
-        async function loadSchema(withData) {
-            setStatus('Loading…', 'loading');
-            try {
-                const [schemaResp, lookupsResp] = await Promise.all([
-                    fetch(url(`/api/schema/${currentEntity}?withData=${withData ? '1' : '0'}`)),
-                    fetch(url(`/api/lookups?entity=${currentEntity}`)),
-                ]);
-                const schema  = await schemaResp.json();
-                const lookups = await lookupsResp.json();
-                currentCols = schema.columns;
-                currentFieldSources = lookups;
-                renderDefaultsBar(currentCols, lookups);
-                buildSheet(currentCols, withData ? schema.data : [], lookups);
-                if (withData) {
-                    setStatus(`${schema.data.length} records loaded`, 'ok');
-                    log(`Loaded ${schema.data.length} existing ${currentEntity} records`, 'info');
-                } else {
-                    setStatus('Ready', '');
+        let exp7 = 0, exp30 = 0;
+
+        if (!entries.length) {
+            body.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--text-muted);padding:24px">No stock entries in this area</td></tr>';
+        } else {
+            body.innerHTML = entries.map(e => {
+                const bbe    = e.best_before_date && e.best_before_date !== '2999-12-31' ? e.best_before_date : '';
+                const bbeDate = bbe ? new Date(bbe) : null;
+                if (bbeDate) {
+                    if (bbeDate <= d7)  exp7++;
+                    if (bbeDate <= d30) exp30++;
                 }
-            } catch (e) {
-                setStatus('Load failed', 'error');
-                log('Load error: ' + e.message, 'error');
-            }
-        }
-
-        async function loadExisting() { await loadSchema(true); }
-
-        // ── Defaults bar ─────────────────────────────────────────────────────
-
-        function renderDefaultsBar(columns, fieldSources) {
-            const fkCols = columns.filter(c => c !== 'id' && fieldSources[c]);
-            const bar    = document.getElementById('defaultsBar');
-            const fields = document.getElementById('defaultsFields');
-
-            if (fkCols.length === 0) { bar.style.display = 'none'; return; }
-
-            currentDefaults = {};
-            fields.innerHTML = '';
-
-            fkCols.forEach(col => {
-                const source = fieldSources[col];
-                const wrap   = document.createElement('div');
-                wrap.className = 'default-field';
-
-                const lbl = document.createElement('label');
-                lbl.textContent = col;
-
-                const sel = document.createElement('select');
-                sel.innerHTML = `<option value="">any</option>` +
-                    source.map(s => `<option value="${s.id}">${s.name}</option>`).join('');
-                sel.onchange = () => {
-                    if (sel.value) currentDefaults[col] = sel.value;
-                    else delete currentDefaults[col];
-                };
-
-                wrap.appendChild(lbl);
-                wrap.appendChild(sel);
-                fields.appendChild(wrap);
-            });
-
-            bar.style.display = 'flex';
-        }
-
-        function clearDefaults() {
-            currentDefaults = {};
-            document.querySelectorAll('#defaultsFields select').forEach(s => s.value = '');
-        }
-
-        // ── Build spreadsheet ────────────────────────────────────────────────
-
-        function emptyRow() {
-            const row = Array(currentCols.length).fill('');
-            const ai = currentCols.indexOf('active');
-            if (ai >= 0) row[ai] = '1';
-            return row;
-        }
-
-        function buildSheet(columns, data, fieldSources) {
-            const el = document.getElementById('spreadsheet');
-            if (sheet) {
-                try { jspreadsheet.destroy(el); } catch (e) {}
-                el.innerHTML = '';
-                sheet = null;
-            }
-
-            const colDefs = columns.map(col => {
-                const source = fieldSources[col];
-                return {
-                    type:     source ? 'dropdown' : 'text',
-                    title:    col,
-                    source:   source || undefined,
-                    width:    col === 'id' ? 55
-                            : source ? 200
-                            : col.includes('description') || col.includes('note') ? 240
-                            : col.includes('name') ? 200
-                            : 150,
-                    autocomplete: source ? true : undefined,
-                };
-            });
-
-            let tableData;
-            if (data && data.length > 0) {
-                tableData = data.map(row =>
-                    columns.map(c => {
-                        const v = row[c];
-                        return v === null || v === undefined ? '' : String(v);
-                    })
-                );
-                tableData = tableData.concat(Array(10).fill(null).map(emptyRow));
-            } else {
-                tableData = Array(50).fill(null).map(emptyRow);
-            }
-
-            const wrapH = document.querySelector('.grid-wrap').clientHeight;
-
-            suppressAutoSave = true;
-            sheet = jspreadsheet(el, {
-                data: tableData,
-                columns: colDefs,
-                tableOverflow: true,
-                tableWidth: '100%',
-                tableHeight: (wrapH - 2) + 'px',
-                minDimensions: [columns.length, 50],
-                allowInsertColumn: false,
-                allowDeleteColumn: false,
-                onbeforechange: function(instance, cell, x, y, value) {
-                    // Block manual edits to the id column; only auto-save may write it
-                    if (currentCols[x] === 'id' && !suppressAutoSave) return false;
-                    return value;
-                },
-                onchange: function(instance, cell, x, y, value) {
-                    if (!suppressAutoSave) scheduleRowSave(y);
-                },
-                contextMenu: function(obj, x, y, e, items) {
-                    return items.filter(item =>
-                        item && typeof item.title === 'string' && /row/i.test(item.title)
-                    );
-                },
-            });
-            suppressAutoSave = false;
-        }
-
-        // ── Auto-save on cell commit ─────────────────────────────────────────
-
-        function scheduleRowSave(rowIdx) {
-            clearTimeout(saveTimers[rowIdx]);
-            const allData = sheet.getData();
-            const rowArr  = allData[rowIdx] || [];
-            const obj = {};
-            currentCols.forEach((col, i) => {
-                const v = rowArr[i];
-                if (v !== '' && v !== null && v !== undefined) obj[col] = v;
-            });
-            const isNew = !obj.id;
-            // New rows: wait longer and require at least a name before attempting save
-            const delay = isNew ? 2000 : 400;
-            if (isNew && !obj.name) return;
-            saveTimers[rowIdx] = setTimeout(() => saveRow(rowIdx), delay);
-        }
-
-        async function saveRow(rowIdx) {
-            const allData = sheet.getData();
-            const rowArr  = allData[rowIdx];
-            if (!rowArr) return;
-
-            const obj = {};
-            currentCols.forEach((col, i) => {
-                const v = rowArr[i];
-                if (v !== '' && v !== null && v !== undefined) obj[col] = v;
-            });
-
-            const keys = Object.keys(obj);
-            if (keys.length === 0) return;
-            if (keys.length === 1 && keys[0] === 'id') return;
-
-            // For new rows, merge defaults into any empty FK fields
-            if (!obj.id) {
-                Object.entries(currentDefaults).forEach(([col, val]) => {
-                    if (!obj[col]) obj[col] = val;
-                });
-            }
-
-            showAutosave('saving', 'saving…');
-            try {
-                const resp = await fetch(url(`/api/import/${currentEntity}`), {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ rows: [obj] }),
-                });
-                const result = await resp.json();
-                const r = result.results[0];
-
-                if (r.ok) {
-                    // If this was a new row, write the returned id back into the id cell
-                    if (r.created_id) {
-                        const idColIdx = currentCols.indexOf('id');
-                        if (idColIdx >= 0) {
-                            suppressAutoSave = true;
-                            sheet.setValueFromCoords(idColIdx, rowIdx, String(r.created_id));
-                            suppressAutoSave = false;
-                        }
-                    }
-                    showAutosave('ok', 'saved');
-                    log(`Row ${rowIdx + 1}: ✓ saved${r.created_id ? ' → id ' + r.created_id : ''}`, 'ok');
-                } else {
-                    showAutosave('error', 'error');
-                    log(`Row ${rowIdx + 1}: ✗ ${friendlyError(r.response || r.error)}`, 'error');
-                }
-            } catch (e) {
-                showAutosave('error', 'error');
-                log(`Row ${rowIdx + 1}: save error — ${e.message}`, 'error');
-            }
-        }
-
-        function friendlyError(detail) {
-            const msg = (typeof detail === 'object' && detail !== null)
-                ? (detail.error_message || JSON.stringify(detail))
-                : String(detail || '');
-            const notNull = msg.match(/NOT NULL constraint failed: \w+\.(\w+)/);
-            if (notNull) return `Required field not filled: ${notNull[1]}`;
-            const noCol = msg.match(/no such column: (\w+)/);
-            if (noCol) return `Computed column "${noCol[1]}" can't be saved — reload schema to refresh columns`;
-            const unique = msg.match(/UNIQUE constraint failed: \w+\.(\w+)/);
-            if (unique) return `Duplicate value in unique field: ${unique[1]}`;
-            return msg;
-        }
-
-        function showAutosave(type, label) {
-            const badge = document.getElementById('autosaveBadge');
-            badge.textContent = label;
-            badge.className = `autosave-badge visible ${type}`;
-            clearTimeout(autosaveFadeTimer);
-            if (type !== 'saving') {
-                autosaveFadeTimer = setTimeout(() => {
-                    badge.className = 'autosave-badge';
-                }, 2000);
-            }
-        }
-
-        // ── Grid helpers ─────────────────────────────────────────────────────
-
-        function clearGrid() {
-            if (!sheet) return;
-            suppressAutoSave = true;
-            sheet.setData(Array(50).fill(null).map(emptyRow));
-            suppressAutoSave = false;
-            log('Grid cleared', 'info');
-            setStatus('Cleared', '');
-        }
-
-        function addRows(n) {
-            if (!sheet) return;
-            suppressAutoSave = true;
-            sheet.insertRow(Array(n).fill(null).map(emptyRow));
-            suppressAutoSave = false;
-        }
-
-        function downloadCsv() {
-            if (sheet) sheet.download(false);
-        }
-
-        // ── CSV upload ───────────────────────────────────────────────────────
-
-        function uploadCsv(event) {
-            const file = event.target.files[0];
-            if (!file) return;
-            const reader = new FileReader();
-            reader.onload = e => {
-                const lines = e.target.result.trim().split(/\r?\n/);
-                if (!lines.length) return;
-                const headers = parseCsvRow(lines[0]);
-                const rows    = lines.slice(1).map(l => parseCsvRow(l));
-                const colMap  = headers.map(h => currentCols.indexOf(h.trim()));
-                const aligned = rows.map(row => {
-                    const out = Array(currentCols.length).fill('');
-                    colMap.forEach((ci, i) => { if (ci >= 0 && row[i] !== undefined) out[ci] = row[i]; });
-                    return out;
-                });
-                suppressAutoSave = true;
-                if (sheet) sheet.setData(aligned);
-                suppressAutoSave = false;
-                log(`CSV uploaded: ${aligned.length} rows`, 'info');
-                const unmatched = headers.filter((h, i) => colMap[i] < 0);
-                if (unmatched.length) log(`Unmatched columns (ignored): ${unmatched.join(', ')}`, 'error');
-            };
-            reader.readAsText(file);
-            event.target.value = '';
-        }
-
-        function parseCsvRow(line) {
-            const result = [];
-            let cur = '', inQ = false;
-            for (let i = 0; i < line.length; i++) {
-                const c = line[i];
-                if (c === '"') {
-                    if (inQ && line[i + 1] === '"') { cur += '"'; i++; }
-                    else { inQ = !inQ; }
-                } else if (c === ',' && !inQ) {
-                    result.push(cur); cur = '';
-                } else { cur += c; }
-            }
-            result.push(cur);
-            return result;
-        }
-
-        // ── Bulk import (Import All button) ──────────────────────────────────
-
-        async function importAll() {
-            if (!sheet) return;
-
-            const data = sheet.getData();
-            const rows = [];
-            const rowMap = []; // maps result index → sheet row index
-            data.forEach((row, sheetRowIdx) => {
-                const obj = {};
-                currentCols.forEach((col, i) => {
-                    const v = row[i];
-                    if (v !== '' && v !== null && v !== undefined) obj[col] = v;
-                });
-                const keys = Object.keys(obj);
-                if (keys.length > 0 && !(keys.length === 1 && keys[0] === 'id')) {
-                    rows.push(obj);
-                    rowMap.push(sheetRowIdx);
-                }
-            });
-
-            if (rows.length === 0) { log('Nothing to import', 'info'); return; }
-
-            clearLog();
-            setStatus(`Importing ${rows.length} rows…`, 'loading');
-            log(`Bulk importing ${rows.length} rows into ${currentEntity}…`, 'info');
-
-            try {
-                const resp = await fetch(url(`/api/import/${currentEntity}`), {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ rows }),
-                });
-                const result = await resp.json();
-                let ok = 0, errs = 0;
-                const idColIdx = currentCols.indexOf('id');
-                suppressAutoSave = true;
-                result.results.forEach((r, i) => {
-                    if (r.ok) {
-                        ok++;
-                        log(`Row ${i + 1}: ✓ ${r.status}${r.created_id ? ' → id=' + r.created_id : ''}`, 'ok');
-                        if (r.created_id && idColIdx >= 0) {
-                            sheet.setValueFromCoords(idColIdx, rowMap[i], String(r.created_id));
-                        }
-                    } else {
-                        errs++;
-                        log(`Row ${i + 1}: ✗ ${r.status} — ${JSON.stringify(r.response || r.error || '')}`, 'error');
-                    }
-                });
-                suppressAutoSave = false;
-                setStatus(`${ok} imported, ${errs} failed`, errs > 0 ? 'error' : 'ok');
-            } catch (e) {
-                setStatus('Request failed', 'error');
-                log('Import error: ' + e.message, 'error');
-            }
-        }
-
-        // ── Receipt Import ───────────────────────────────────────────────────
-
-        let receiptMode     = false;
-        let receiptItems    = [];   // [{description, decoded_name, price, quantity, barcode, grocy_match, status}]
-        let allProducts     = [];   // [{id, name}] from Grocy
-        let receiptLookups  = {};   // FK lookups for new product form
-        let receiptInitDone = false;
-        let receiptDecoding = false;
-
-        function toggleReceiptMode() {
-            receiptMode = !receiptMode;
-            const btn      = document.getElementById('receiptModeBtn');
-            const gridWrap = document.getElementById('gridWrap');
-            const logPanel = document.getElementById('logPanel');
-            const panel    = document.getElementById('receiptPanel');
-            const defBar   = document.getElementById('defaultsBar');
-
-            if (receiptMode) {
-                btn.classList.add('btn-primary');
-                btn.textContent = '✕ Receipt Mode';
-                gridWrap.style.display = 'none';
-                logPanel.style.display = 'none';
-                defBar.style.display   = 'none';
-                panel.style.display    = 'flex';
-                if (!receiptInitDone) initReceiptMode();
-            } else {
-                btn.classList.remove('btn-primary');
-                btn.textContent = '🧾 Walmart Receipt';
-                gridWrap.style.display = '';
-                logPanel.style.display = '';
-                renderDefaultsBar(currentCols, currentFieldSources);
-                panel.style.display = 'none';
-            }
-        }
-
-        async function initReceiptMode() {
-            receiptInitDone = true;
-            try {
-                const [schemaResp, lookupsResp, slResp] = await Promise.all([
-                    fetch(url('/api/schema/products?withData=1')),
-                    fetch(url('/api/lookups?entity=products')),
-                    fetch(url('/api/schema/shopping_locations?withData=1')),
-                ]);
-                const schema   = await schemaResp.json();
-                receiptLookups = await lookupsResp.json();
-                const slSchema = await slResp.json();
-
-                allProducts = (schema.data || []).map(p => ({ id: String(p.id), name: p.name || String(p.id) }));
-
-                const sel  = document.getElementById('walmartLocSelect');
-                const locs = slSchema.data || [];
-                sel.innerHTML = `<option value="">-- select --</option>` +
-                    locs.map(l => {
-                        const isWal = /walmart/i.test(l.name || '');
-                        return `<option value="${l.id}"${isWal ? ' selected' : ''}>${l.name}</option>`;
-                    }).join('');
-            } catch (e) {
-                console.error('Receipt init failed', e);
-            }
-        }
-
-        // ── File handling ────────────────────────────────────────────────────
-
-        async function handleReceiptFile(event) {
-            const file = event.target.files[0];
-            if (!file) return;
-            event.target.value = '';
-            await uploadReceiptPdf(file);
-        }
-
-        async function uploadReceiptPdf(file) {
-            setStatus('Parsing receipt…', 'loading');
-            const formData = new FormData();
-            formData.append('file', file);
-            try {
-                const resp   = await fetch(url('/api/receipt/parse'), { method: 'POST', body: formData });
-                const result = await resp.json();
-                if (!resp.ok || result.error) {
-                    setStatus('Parse failed: ' + (result.error || resp.statusText), 'error');
-                    return;
-                }
-                receiptItems = (result.items || []).map(item => ({
-                    ...item,
-                    decoded_name: null,
-                    grocy_match:  null,
-                    status:       'pending',
-                }));
-                if (!receiptItems.length) {
-                    setStatus('No items found in receipt', 'error');
-                    return;
-                }
-                document.getElementById('receiptUploadZone').style.display = 'none';
-                document.getElementById('receiptContent').style.display    = 'flex';
-                const parts = [result.store, result.date,
-                    `${receiptItems.length} items`,
-                    result.total ? `$${parseFloat(result.total).toFixed(2)}` : null
-                ].filter(Boolean);
-                document.getElementById('receiptMeta').textContent = parts.join(' · ');
-                renderReceiptList();
-                updateStats();
-                setStatus(`${receiptItems.length} items parsed`, 'ok');
-            } catch (e) {
-                setStatus('Parse error: ' + e.message, 'error');
-            }
-        }
-
-        // ── Fuzzy name matching (used for order-text imports) ────────────────
-
-        function scoreMatch(receiptDesc, productName) {
-            const norm = s => s.toLowerCase().replace(/[^a-z0-9\s]/g, '').split(/\s+/).filter(Boolean);
-            const rw = norm(receiptDesc), pw = norm(productName);
-            if (!rw.length || !pw.length) return 0;
-            let score = 0;
-            for (const r of rw) for (const p of pw) {
-                if (p === r) score += 2;
-                else if (r.length > 2 && p.length > 2 && (p.startsWith(r) || r.startsWith(p))) score += 1;
-            }
-            return score / (rw.length + pw.length);
-        }
-
-        function findBestMatch(desc) {
-            let best = null, bestScore = 0;
-            for (const p of allProducts) {
-                const s = scoreMatch(desc, p.name);
-                if (s > bestScore) { bestScore = s; best = p; }
-            }
-            return bestScore >= 0.3 ? best : null;
-        }
-
-        // ── Text-paste mode ──────────────────────────────────────────────────
-
-        function switchToTextMode() {
-            document.getElementById('uploadModePdf').style.display  = 'none';
-            document.getElementById('uploadModeText').style.display = '';
-            document.getElementById('receiptUploadZone').style.cursor = 'default';
-        }
-
-        function switchToPdfMode() {
-            document.getElementById('uploadModeText').style.display = 'none';
-            document.getElementById('uploadModePdf').style.display  = '';
-            document.getElementById('receiptUploadZone').style.cursor = 'pointer';
-        }
-
-        async function parseOrderText() {
-            const text = (document.getElementById('orderTextArea').value || '').trim();
-            if (!text) { setStatus('Paste some order text first', 'error'); return; }
-
-            setStatus('Parsing order text…', 'loading');
-            try {
-                const resp   = await fetch(url('/api/receipt/parse-text'), {
-                    method:  'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body:    JSON.stringify({ text }),
-                });
-                const result = await resp.json();
-                if (!resp.ok || result.error) {
-                    setStatus('Parse failed: ' + (result.error || ''), 'error');
-                    return;
-                }
-
-                // Auto-match by fuzzy name — order text already has readable names
-                receiptItems = (result.items || []).map(item => {
-                    const match = findBestMatch(item.description);
-                    return {
-                        ...item,
-                        decoded_name: item.description,
-                        grocy_match:  match || null,
-                        status:       match ? 'matched' : 'new',
-                    };
-                });
-
-                if (!receiptItems.length) { setStatus('No items found', 'error'); return; }
-
-                document.getElementById('receiptUploadZone').style.display = 'none';
-                document.getElementById('receiptContent').style.display    = 'flex';
-
-                // Header meta
-                const matched = receiptItems.filter(i => i.status === 'matched').length;
-                const parts   = [
-                    `${receiptItems.length} items`,
-                    result.total ? `$${parseFloat(result.total).toFixed(2)}` : null,
-                    'order text',
-                ].filter(Boolean);
-                document.getElementById('receiptMeta').textContent = parts.join(' · ');
-
-                // Hide "Decode All" — names are already readable and auto-matched
-                document.getElementById('decodeAllBtn').style.display = 'none';
-
-                renderReceiptList();
-                updateStats();
-                setStatus(`${receiptItems.length} items — ${matched} auto-matched`, 'ok');
-            } catch (e) {
-                setStatus('Parse error: ' + e.message, 'error');
-            }
-        }
-
-        // ── Decode All ───────────────────────────────────────────────────────
-
-        async function decodeAll() {
-            if (receiptDecoding) return;
-            const pending = receiptItems.filter(i => i.status === 'pending');
-            if (!pending.length) { setStatus('Nothing to decode', ''); return; }
-
-            receiptDecoding = true;
-            const btn = document.getElementById('decodeAllBtn');
-            btn.disabled    = true;
-            btn.textContent = 'Decoding…';
-            setStatus(`Decoding ${pending.length} items…`, 'loading');
-
-            try {
-                const resp   = await fetch(url('/api/receipt/decode'), {
-                    method:  'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body:    JSON.stringify({ items: pending }),
-                });
-                const result = await resp.json();
-                if (!resp.ok || result.error) {
-                    setStatus('Decode failed: ' + (result.error || ''), 'error');
-                    return;
-                }
-                // Merge decoded data back by matching original description
-                const decoded = result.items || [];
-                decoded.forEach((di, n) => {
-                    const orig = pending[n];
-                    if (!orig) return;
-                    const idx = receiptItems.indexOf(orig);
-                    if (idx >= 0) Object.assign(receiptItems[idx], di);
-                });
-                renderReceiptList();
-                updateStats();
-                const matched  = receiptItems.filter(i => i.status === 'matched').length;
-                const newItems = receiptItems.filter(i => i.status === 'new').length;
-                setStatus(`${matched} matched · ${newItems} new items`, 'ok');
-            } catch (e) {
-                setStatus('Decode error: ' + e.message, 'error');
-            } finally {
-                receiptDecoding = false;
-                btn.disabled    = false;
-                btn.textContent = 'Decode All';
-            }
-        }
-
-        // ── Render item list ─────────────────────────────────────────────────
-
-        function updateStats() {
-            const counts = { matched: 0, new: 0, pending: 0, skipped: 0 };
-            receiptItems.forEach(i => { if (counts[i.status] !== undefined) counts[i.status]++; });
-            document.getElementById('statMatched').textContent = counts.matched;
-            document.getElementById('statNew').textContent     = counts.new;
-            document.getElementById('statPending').textContent = counts.pending;
-            document.getElementById('statSkipped').textContent = counts.skipped;
-            const ready = counts.matched;
-            document.getElementById('receiptMatchStatus').textContent =
-                `${ready} item${ready !== 1 ? 's' : ''} ready to import · ${counts.skipped} skipped`;
-        }
-
-        function renderReceiptList() {
-            const list = document.getElementById('receiptItemList');
-            list.innerHTML = '';
-            const sections = [
-                { status: 'matched', label: 'Matched'   },
-                { status: 'new',     label: 'New Items'  },
-                { status: 'pending', label: 'Pending'    },
-                { status: 'skipped', label: 'Skipped'    },
-            ];
-            sections.forEach(({ status, label }) => {
-                const group = receiptItems.map((item, idx) => ({ item, idx }))
-                                          .filter(({ item }) => item.status === status);
-                if (!group.length) return;
-                const hdr = document.createElement('div');
-                hdr.className   = 'ri-section-header';
-                hdr.textContent = label;
-                list.appendChild(hdr);
-                group.forEach(({ item, idx }) => list.appendChild(buildItemCard(item, idx)));
-            });
-        }
-
-        function buildItemCard(item, idx) {
-            const statusLabels = { pending: 'Pending', matched: 'Matched', new: 'New Item', skipped: 'Skipped' };
-            const statusLabel  = statusLabels[item.status] || 'Pending';
-
-            // Subtitle: decoded name (if different) + barcode
-            const subParts = [];
-            if (item.decoded_name && item.decoded_name !== item.description) subParts.push(item.decoded_name);
-            if (item.barcode) subParts.push(item.barcode);
-            if (item.grocy_match) subParts.push(`→ ${item.grocy_match.name}`);
-
-            const priceStr = `$${parseFloat(item.price || 0).toFixed(2)}`;
-            const qtyStr   = item.quantity > 1 ? `×${item.quantity}  ` : '';
-
-            // Action buttons
-            let actionHtml = `<span class="ri-status-badge ri-status-${item.status}">${statusLabel}</span>`;
-            if (item.status === 'new') {
-                actionHtml += `<button class="btn" style="font-size:11px;padding:2px 8px"
-                    onclick="event.stopPropagation();toggleNewProductForm(${idx})">+ Create</button>`;
-            }
-            if (item.status !== 'skipped') {
-                const linkLabel = item.status === 'matched' ? 'Re-link' : 'Link';
-                actionHtml += `<button class="btn" style="font-size:11px;padding:2px 8px"
-                    onclick="event.stopPropagation();toggleLinkPicker(${idx})">${linkLabel}</button>`;
-                actionHtml += `<button class="btn" style="font-size:11px;padding:2px 8px"
-                    onclick="event.stopPropagation();toggleSkip(${idx})">Skip</button>`;
-            } else {
-                actionHtml += `<button class="btn" style="font-size:11px;padding:2px 8px"
-                    onclick="event.stopPropagation();toggleSkip(${idx})">Restore</button>`;
-            }
-
-            const card = document.createElement('div');
-            card.className = 'ri-card';
-            card.id        = `ri-card-${idx}`;
-            card.innerHTML = `
-                <span class="ri-num">${idx + 1}</span>
-                <div class="ri-body">
-                    <div class="ri-name">${escHtml(item.description)}</div>
-                    ${subParts.length ? `<div class="ri-sub">${escHtml(subParts.join(' · '))}</div>` : ''}
-                </div>
-                <span class="ri-price">${qtyStr}${priceStr}</span>
-                <div class="ri-actions">${actionHtml}</div>`;
-
-            // Return a fragment so renderReceiptList can append card + optional form in one shot
-            const frag = document.createDocumentFragment();
-            frag.appendChild(card);
-
-            if (item.status === 'new') {
-                const formWrap = document.createElement('div');
-                formWrap.id        = `ri-form-${idx}`;
-                formWrap.className = 'ri-new-form';
-                formWrap.style.display = 'none';
-                formWrap.innerHTML = buildNewProductForm(idx, item);
-                frag.appendChild(formWrap);
-            }
-
-            if (item.status !== 'skipped') {
-                const linkWrap = document.createElement('div');
-                linkWrap.id        = `ri-link-${idx}`;
-                linkWrap.className = 'ri-link-picker';
-                linkWrap.style.display = 'none';
-                linkWrap.innerHTML = `
-                    <input id="ri-link-search-${idx}" class="ri-link-search" type="text"
-                        placeholder="Search Grocy products…" oninput="filterLinkOptions(${idx})">
-                    <div id="ri-link-results-${idx}" class="ri-link-results"></div>`;
-                frag.appendChild(linkWrap);
-            }
-
-            return frag;
-        }
-
-        function escHtml(s) {
-            return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
-        }
-
-        function toggleSkip(idx) {
-            const item = receiptItems[idx];
-            if (!item) return;
-            if (item.status === 'skipped') {
-                item.status = item.grocy_match ? 'matched' : (item.decoded_name ? 'new' : 'pending');
-            } else {
-                item.status = 'skipped';
-            }
-            renderReceiptList();
-            updateStats();
-        }
-
-        function skipAllPending() {
-            receiptItems.forEach(i => {
-                if (i.status === 'pending' || i.status === 'new') i.status = 'skipped';
-            });
-            renderReceiptList();
-            updateStats();
-        }
-
-        function toggleLinkPicker(idx) {
-            const el = document.getElementById(`ri-link-${idx}`);
-            if (!el) return;
-            const opening = el.style.display === 'none';
-            // Close all open pickers
-            document.querySelectorAll('.ri-link-picker').forEach(e => e.style.display = 'none');
-            if (opening) {
-                el.style.display = 'block';
-                const input = document.getElementById(`ri-link-search-${idx}`);
-                if (input) { input.value = ''; filterLinkOptions(idx); input.focus(); }
-            }
-        }
-
-        function filterLinkOptions(idx) {
-            const input   = document.getElementById(`ri-link-search-${idx}`);
-            const results = document.getElementById(`ri-link-results-${idx}`);
-            if (!input || !results) return;
-            const q = input.value.trim().toLowerCase();
-            const matches = (q
-                ? allProducts.filter(p => p.name.toLowerCase().includes(q))
-                : allProducts
-            ).slice(0, 40);
-            if (!matches.length) {
-                results.innerHTML = `<div class="ri-link-none">No products found</div>`;
-                return;
-            }
-            results.innerHTML = matches.map(p =>
-                `<div class="ri-link-option" onclick="linkProduct(${idx},'${escHtml(p.id)}',${JSON.stringify(p.name)})">${escHtml(p.name)}</div>`
-            ).join('');
-        }
-
-        function linkProduct(idx, id, name) {
-            receiptItems[idx].grocy_match = { id: String(id), name };
-            receiptItems[idx].status = 'matched';
-            renderReceiptList();
-            updateStats();
-        }
-
-        // ── New product form ─────────────────────────────────────────────────
-
-        function toggleNewProductForm(idx) {
-            const form = document.getElementById(`ri-form-${idx}`);
-            if (form) form.style.display = form.style.display === 'none' ? '' : 'none';
-        }
-
-        function buildSelectOpts(key, includeBlank = true) {
-            const src = receiptLookups[key] || [];
-            let html  = includeBlank ? `<option value="">-- select --</option>` : '';
-            src.forEach(s => { html += `<option value="${escHtml(s.id)}">${escHtml(s.name)}</option>`; });
-            return html;
-        }
-
-        function toTitleCase(str) {
-            return str.toLowerCase().replace(/\b\w/g, c => c.toUpperCase());
-        }
-
-        function buildNewProductForm(idx, item) {
-            const titleName = toTitleCase(item.decoded_name || item.description);
-            const optionalFields = [
-                { key: 'shopping_location_id',                label: 'Default Shopping Location' },
-                { key: 'parent_product_id',                   label: 'Parent Product' },
-                { key: 'min_stock_amount',                    label: 'Min Stock Amount',          type: 'number' },
-                { key: 'default_best_before_days',            label: 'Best Before Days',          type: 'number' },
-                { key: 'default_best_before_days_after_open', label: 'Best Before (after open)',  type: 'number' },
-                { key: 'calories',                            label: 'Calories',                  type: 'number' },
-                { key: 'active',                              label: 'Active (1=yes)',            type: 'number' },
-            ];
-            const optHtml = optionalFields.map(f => {
-                const src   = receiptLookups[f.key];
-                const input = src
-                    ? `<select id="np-${idx}-${f.key}">${buildSelectOpts(f.key)}</select>`
-                    : `<input type="${f.type || 'text'}" id="np-${idx}-${f.key}" placeholder="${f.label}">`;
-                return `<div class="ri-field"><label>${f.label}</label>${input}</div>`;
+                const bbeStyle = bbeDate && bbeDate <= d7  ? 'color:var(--error);font-weight:600'
+                               : bbeDate && bbeDate <= d30 ? 'color:var(--warning)'
+                               : '';
+                return `<tr>
+                    <td>${escHtml(e.product_name || '')}</td>
+                    <td>${parseFloat(e.amount || 0)}</td>
+                    <td>${escHtml(e.qu_name || '')}</td>
+                    <td style="${bbeStyle}">${bbe || '—'}</td>
+                    <td>${e.purchased_date ? e.purchased_date.slice(0,10) : '—'}</td>
+                    <td><button class="btn btn-danger" style="font-size:11px;padding:2px 8px"
+                        onclick="deleteStockEntry(${e.id})">Delete</button></td>
+                </tr>`;
             }).join('');
-
-            return `
-                <div class="ri-new-form-title">New Product</div>
-                <div class="ri-form-grid">
-                    <div class="ri-field" style="grid-column:1/-1">
-                        <label>Name <span class="req">*</span></label>
-                        <input type="text" id="np-${idx}-name" value="${escHtml(titleName)}">
-                    </div>
-                    <div class="ri-field" style="grid-column:1/-1">
-                        <label>Description</label>
-                        <textarea id="np-${idx}-description">${escHtml(item.description)}</textarea>
-                    </div>
-                    <div class="ri-field">
-                        <label>Product Group</label>
-                        <select id="np-${idx}-product_group_id">${buildSelectOpts('product_group_id')}</select>
-                    </div>
-                    <div class="ri-field">
-                        <label>Storage Location <span class="req">*</span></label>
-                        <select id="np-${idx}-location_id">${buildSelectOpts('location_id')}</select>
-                    </div>
-                    <div class="ri-field">
-                        <label>QU Purchase <span class="req">*</span></label>
-                        <select id="np-${idx}-qu_id_purchase">${buildSelectOpts('qu_id_purchase')}</select>
-                    </div>
-                    <div class="ri-field">
-                        <label>QU Stock <span class="req">*</span></label>
-                        <select id="np-${idx}-qu_id_stock">${buildSelectOpts('qu_id_stock')}</select>
-                    </div>
-                </div>
-                <div class="ri-collapsible-toggle" onclick="toggleOptionalFields(${idx})">
-                    <span id="ri-expand-${idx}">▶</span> Optional fields
-                </div>
-                <div id="ri-optional-${idx}" style="display:none">
-                    <div class="ri-form-grid">${optHtml}</div>
-                </div>
-                <div class="ri-form-actions">
-                    <button class="btn btn-primary" onclick="saveNewProduct(${idx})">Save Product</button>
-                    <button class="btn" onclick="toggleNewProductForm(${idx})">Cancel</button>
-                    <span class="ri-form-error" id="ri-form-err-${idx}"></span>
-                </div>`;
         }
 
-        function toggleOptionalFields(idx) {
-            const el   = document.getElementById(`ri-optional-${idx}`);
-            const icon = document.getElementById(`ri-expand-${idx}`);
-            const show = el.style.display === 'none';
-            el.style.display = show ? '' : 'none';
-            icon.textContent = show ? '▼' : '▶';
-            if (show) {
-                const wId   = document.getElementById('walmartLocSelect').value;
-                const slSel = document.getElementById(`np-${idx}-shopping_location_id`);
-                if (slSel && wId && !slSel.value) slSel.value = wId;
-            }
-        }
+        const distinctProds = new Set(entries.map(e => e.product_id)).size;
+        document.getElementById('stockTileItems').textContent   = distinctProds;
+        document.getElementById('stockTileExp7').textContent    = exp7;
+        document.getElementById('stockTileExp30').textContent   = exp30;
+        document.getElementById('stockTileEntries').textContent = entries.length;
+    }
 
-        async function saveNewProduct(idx) {
-            const get   = f => { const el = document.getElementById(`np-${idx}-${f}`); return el ? el.value.trim() : ''; };
-            const errEl = document.getElementById(`ri-form-err-${idx}`);
-            errEl.textContent = '';
+    async function deleteStockEntry(entryId) {
+        if (!confirm('Delete this stock entry?')) return;
+        try {
+            const r = await fetch(url('/api/stock/entries/' + entryId), { method: 'DELETE' });
+            const d = await r.json();
+            if (d.ok) loadStock();
+            else alert('Delete failed');
+        } catch (e) { alert('Error: ' + e.message); }
+    }
 
-            const name = get('name'), qu_id_purchase = get('qu_id_purchase'),
-                  qu_id_stock = get('qu_id_stock'), location_id = get('location_id');
-            const missing = [];
-            if (!name)           missing.push('Name');
-            if (!qu_id_purchase) missing.push('QU Purchase');
-            if (!qu_id_stock)    missing.push('QU Stock');
-            if (!location_id)    missing.push('Storage Location');
-            if (missing.length)  { errEl.textContent = 'Required: ' + missing.join(', '); return; }
+    // ══════════════════════════════════════════════════════════════
+    //  INVENTORY PAGE
+    // ══════════════════════════════════════════════════════════════
+    let invData = [];   // [{product_id, product_name, current_amount, best_before_date, location_id}]
 
-            const payload = { name, qu_id_purchase, qu_id_stock, location_id };
-            ['description','product_group_id','shopping_location_id','parent_product_id',
-             'min_stock_amount','default_best_before_days',
-             'default_best_before_days_after_open','calories','active'].forEach(f => {
-                const v = get(f); if (v) payload[f] = v;
-            });
-
-            try {
-                const resp   = await fetch(url('/api/import/products'), {
-                    method: 'POST', headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ rows: [payload] }),
-                });
-                const result = await resp.json();
-                const r      = result.results[0];
-                if (!r.ok) { errEl.textContent = friendlyError(r.response || r.error); return; }
-
-                const newProduct = { id: String(r.created_id), name };
-                allProducts.push(newProduct);
-                receiptItems[idx].grocy_match  = newProduct;
-                receiptItems[idx].status       = 'matched';
-                setStatus(`Saved: ${name}`, 'ok');
-                renderReceiptList();
-                updateStats();
-            } catch (e) {
-                errEl.textContent = 'Error: ' + e.message;
-            }
-        }
-
-        // ── Import to Grocy ──────────────────────────────────────────────────
-
-        async function importToGrocy() {
-            const walmartId = document.getElementById('walmartLocSelect').value;
-            const toImport  = receiptItems
-                .filter(i => i.status === 'matched' && i.grocy_match)
-                .map(i => ({
-                    product_id:           i.grocy_match.id,
-                    amount:               i.quantity || 1,
-                    shopping_location_id: walmartId || undefined,
-                }));
-
-            if (!toImport.length) { setStatus('No matched items to import', 'error'); return; }
-            setStatus(`Receiving ${toImport.length} items…`, 'loading');
-
-            try {
-                const resp   = await fetch(url('/api/stock/receive'), {
-                    method: 'POST', headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ items: toImport }),
-                });
-                const result = await resp.json();
-                const ok   = result.results.filter(r => r.ok).length;
-                const fail = result.results.filter(r => !r.ok).length;
-
-                if (fail === 0) {
-                    setStatus(`✓ ${ok} item${ok !== 1 ? 's' : ''} added to stock`, 'ok');
-                    receiptItems.forEach(i => { if (i.status === 'matched') i.status = 'skipped'; });
-                    renderReceiptList();
-                    updateStats();
-                } else {
-                    setStatus(`${ok} received, ${fail} failed`, 'error');
+    async function loadInventory() {
+        const locId = document.getElementById('invAreaSelect').value;
+        const status = document.getElementById('invStatus');
+        if (!locId) { renderInvTable([]); return; }
+        status.textContent = 'Loading…'; status.className = 'status-pill loading';
+        try {
+            const r = await fetch(url('/api/stock/entries?location_id=' + locId));
+            const entries = await r.json();
+            // Group by product_id — sum amounts, take nearest non-far-future BBE
+            const byProduct = {};
+            (Array.isArray(entries) ? entries : []).forEach(e => {
+                const pid = String(e.product_id);
+                if (!byProduct[pid]) {
+                    byProduct[pid] = { product_id: pid, product_name: e.product_name || '', amount: 0, best_before_date: '', location_id: locId };
                 }
-            } catch (e) {
-                setStatus('Import error: ' + e.message, 'error');
+                byProduct[pid].amount += parseFloat(e.amount || 0);
+                const bbe = e.best_before_date && e.best_before_date !== '2999-12-31' ? e.best_before_date : '';
+                if (bbe && (!byProduct[pid].best_before_date || bbe < byProduct[pid].best_before_date)) {
+                    byProduct[pid].best_before_date = bbe;
+                }
+            });
+            invData = Object.values(byProduct).sort((a,b) => a.product_name.localeCompare(b.product_name));
+            renderInvTable(invData);
+            document.getElementById('invSubmitBtn').disabled = false;
+            status.textContent = `${invData.length} products`; status.className = 'status-pill ok';
+        } catch (e) {
+            status.textContent = 'Error: ' + e.message; status.className = 'status-pill error';
+        }
+    }
+
+    function renderInvTable(rows) {
+        const body = document.getElementById('invBody');
+        if (!rows.length) {
+            body.innerHTML = '<tr><td colspan="5" style="text-align:center;color:var(--text-muted);padding:24px">No stock found in this area</td></tr>';
+            updateInvTiles();
+            return;
+        }
+        body.innerHTML = rows.map((p, i) => `
+            <tr id="inv-row-${i}">
+                <td>${escHtml(p.product_name)}</td>
+                <td style="text-align:center"><span class="inv-current">${p.amount}</span></td>
+                <td class="inv-qty-cell" style="text-align:center">
+                    <input type="number" class="inv-qty-input" id="inv-qty-${i}"
+                        placeholder="${p.amount}" min="0" step="0.001"
+                        oninput="onInvQtyChange(${i})">
+                </td>
+                <td><input type="date" class="inv-bbe-input" id="inv-bbe-${i}" value="${p.best_before_date || ''}"></td>
+                <td><input type="text" class="inv-note-input" id="inv-note-${i}" placeholder="note"></td>
+            </tr>`).join('');
+        updateInvTiles();
+    }
+
+    function onInvQtyChange(i) {
+        const input = document.getElementById(`inv-qty-${i}`);
+        const row   = invData[i];
+        if (!row) return;
+        const val = input.value.trim();
+        const changed = val !== '' && parseFloat(val) !== row.amount;
+        input.classList.toggle('changed', changed);
+        updateInvTiles();
+    }
+
+    function updateInvTiles() {
+        const total   = invData.length;
+        let counted = 0, discrepancies = 0;
+        invData.forEach((p, i) => {
+            const input = document.getElementById(`inv-qty-${i}`);
+            if (input && input.value.trim() !== '') {
+                counted++;
+                if (parseFloat(input.value) !== p.amount) discrepancies++;
             }
-        }
+        });
+        document.getElementById('invTileTotal').textContent       = total || '—';
+        document.getElementById('invTileCounted').textContent     = counted || '—';
+        document.getElementById('invTileRemaining').textContent   = (total - counted) || '—';
+        document.getElementById('invTileDiscrepancy').textContent = discrepancies || '—';
+    }
 
-        function resetReceipt() {
-            receiptItems = [];
-            document.getElementById('receiptUploadZone').style.display  = '';
-            document.getElementById('receiptContent').style.display     = 'none';
-            document.getElementById('receiptItemList').innerHTML         = '';
-            document.getElementById('decodeAllBtn').style.display        = '';
-            document.getElementById('orderTextArea').value               = '';
-            switchToPdfMode();
-            setStatus('Ready', '');
-        }
-
-        // Drag-and-drop (PDF mode only)
-        function setupReceiptDragDrop() {
-            const zone = document.getElementById('receiptUploadZone');
-            zone.addEventListener('dragover', e => {
-                if (document.getElementById('uploadModeText').style.display !== 'none') return;
-                e.preventDefault(); zone.classList.add('drag-over');
+    async function submitCorrections() {
+        const locId = document.getElementById('invAreaSelect').value;
+        const corrections = [];
+        invData.forEach((p, i) => {
+            const qtyInput = document.getElementById(`inv-qty-${i}`);
+            if (!qtyInput || qtyInput.value.trim() === '') return;
+            corrections.push({
+                product_id:       p.product_id,
+                new_amount:       parseFloat(qtyInput.value),
+                best_before_date: document.getElementById(`inv-bbe-${i}`)?.value || p.best_before_date || '',
+                location_id:      locId,
             });
-            zone.addEventListener('dragleave', () => zone.classList.remove('drag-over'));
-            zone.addEventListener('drop', e => {
-                if (document.getElementById('uploadModeText').style.display !== 'none') return;
-                e.preventDefault(); zone.classList.remove('drag-over');
-                const file = e.dataTransfer.files[0];
-                if (file) uploadReceiptPdf(file);
+        });
+        if (!corrections.length) { alert('Enter at least one count first.'); return; }
+        const status = document.getElementById('invStatus');
+        status.textContent = `Submitting ${corrections.length} corrections…`; status.className = 'status-pill loading';
+        try {
+            const r = await fetch(url('/api/stock/correct'), {
+                method: 'POST', headers: {'Content-Type':'application/json'},
+                body: JSON.stringify({ corrections }),
             });
+            const d = await r.json();
+            const ok   = (d.results || []).filter(r => r.ok).length;
+            const fail = (d.results || []).length - ok;
+            status.textContent = `${ok} corrected${fail ? ', ' + fail + ' failed' : ''}`;
+            status.className = fail ? 'status-pill error' : 'status-pill ok';
+            if (!fail) loadInventory();
+        } catch (e) {
+            status.textContent = 'Error: ' + e.message; status.className = 'status-pill error';
         }
-        setupReceiptDragDrop();
+    }
 
-        // ── UI helpers ───────────────────────────────────────────────────────
+    // ══════════════════════════════════════════════════════════════
+    //  MASTER DATA PAGE
+    // ══════════════════════════════════════════════════════════════
+    let sheet = null;
+    let currentCols = [];
+    let currentFieldSources = {};
+    let currentEntity = document.getElementById('entitySelect').value;
+    let suppressAutoSave = false;
+    let currentDefaults = {};
+    const saveTimers = {};
+    let autosaveFadeTimer = null;
 
-        function setStatus(msg, type) {
-            const el = document.getElementById('statusBadge');
-            el.textContent = msg;
-            el.className = 'status ' + (type || '');
+    function mdStatus(msg, type) {
+        const el = document.getElementById('mdStatus');
+        el.textContent = msg; el.className = 'status-pill ' + (type || '');
+    }
+
+    async function checkConfig() {
+        try {
+            const r = await fetch(url('/api/config'));
+            const cfg = await r.json();
+            document.getElementById('configNotice').style.display = cfg.configured ? 'none' : 'flex';
+        } catch {}
+    }
+
+    async function onEntityChange() {
+        currentEntity = document.getElementById('entitySelect').value;
+        await loadSchema(false);
+    }
+
+    async function loadSchema(withData) {
+        mdStatus('Loading…', 'loading');
+        try {
+            const [schemaResp, lookupsResp] = await Promise.all([
+                fetch(url(`/api/schema/${currentEntity}?withData=${withData ? '1' : '0'}`)),
+                fetch(url(`/api/lookups?entity=${currentEntity}`)),
+            ]);
+            const schema  = await schemaResp.json();
+            const lookups = await lookupsResp.json();
+            currentCols = schema.columns;
+            currentFieldSources = lookups;
+            renderDefaultsBar(currentCols, lookups);
+            buildSheet(currentCols, withData ? schema.data : [], lookups);
+            if (withData) {
+                mdStatus(`${schema.data.length} records loaded`, 'ok');
+                log(`Loaded ${schema.data.length} existing ${currentEntity} records`, 'info');
+            } else {
+                mdStatus('Ready', '');
+            }
+        } catch (e) {
+            mdStatus('Load failed', 'error');
+            log('Load error: ' + e.message, 'error');
         }
+    }
 
-        function clearLog() { document.getElementById('logPanel').innerHTML = ''; }
+    async function loadExisting() { await loadSchema(true); }
 
-        function log(msg, type) {
-            const panel = document.getElementById('logPanel');
-            const entry = document.createElement('div');
-            entry.className = 'log-entry ' + (type || 'info');
-            entry.textContent = `[${new Date().toLocaleTimeString()}] ${msg}`;
-            panel.appendChild(entry);
-            panel.scrollTop = panel.scrollHeight;
+    function renderDefaultsBar(columns, fieldSources) {
+        const fkCols = columns.filter(c => c !== 'id' && fieldSources[c]);
+        const bar    = document.getElementById('defaultsBar');
+        const fields = document.getElementById('defaultsFields');
+        if (fkCols.length === 0) { bar.style.display = 'none'; return; }
+        currentDefaults = {};
+        fields.innerHTML = '';
+        fkCols.forEach(col => {
+            const source = fieldSources[col];
+            const wrap = document.createElement('div'); wrap.className = 'default-field';
+            const lbl = document.createElement('label'); lbl.textContent = col;
+            const sel = document.createElement('select');
+            sel.innerHTML = `<option value="">any</option>` + source.map(s => `<option value="${s.id}">${s.name}</option>`).join('');
+            sel.onchange = () => { if (sel.value) currentDefaults[col] = sel.value; else delete currentDefaults[col]; };
+            wrap.appendChild(lbl); wrap.appendChild(sel); fields.appendChild(wrap);
+        });
+        bar.style.display = 'flex';
+    }
+
+    function clearDefaults() {
+        currentDefaults = {};
+        document.querySelectorAll('#defaultsFields select').forEach(s => s.value = '');
+    }
+
+    function emptyRow() {
+        const row = Array(currentCols.length).fill('');
+        const ai = currentCols.indexOf('active');
+        if (ai >= 0) row[ai] = '1';
+        return row;
+    }
+
+    function buildSheet(columns, data, fieldSources) {
+        const el = document.getElementById('spreadsheet');
+        if (sheet) { try { jspreadsheet.destroy(el); } catch(e){} el.innerHTML = ''; sheet = null; }
+        const colDefs = columns.map(col => {
+            const source = fieldSources[col];
+            return {
+                type: source ? 'dropdown' : 'text', title: col, source: source || undefined,
+                width: col === 'id' ? 55 : source ? 200 : col.includes('description') || col.includes('note') ? 240 : col.includes('name') ? 200 : 150,
+                autocomplete: source ? true : undefined,
+            };
+        });
+        let tableData;
+        if (data && data.length > 0) {
+            tableData = data.map(row => columns.map(c => { const v = row[c]; return v === null || v === undefined ? '' : String(v); }));
+            tableData = tableData.concat(Array(10).fill(null).map(emptyRow));
+        } else {
+            tableData = Array(50).fill(null).map(emptyRow);
         }
-    </script>
+        const wrapH = document.getElementById('gridWrap').clientHeight;
+        suppressAutoSave = true;
+        sheet = jspreadsheet(el, {
+            data: tableData, columns: colDefs, tableOverflow: true,
+            tableWidth: '100%', tableHeight: (wrapH - 2) + 'px',
+            minDimensions: [columns.length, 50],
+            allowInsertColumn: false, allowDeleteColumn: false,
+            onbeforechange: (instance, cell, x, y, value) => {
+                if (currentCols[x] === 'id' && !suppressAutoSave) return false;
+                return value;
+            },
+            onchange: (instance, cell, x, y, value) => { if (!suppressAutoSave) scheduleRowSave(y); },
+            contextMenu: (obj, x, y, e, items) => items.filter(item => item && typeof item.title === 'string' && /row/i.test(item.title)),
+        });
+        suppressAutoSave = false;
+    }
+
+    function scheduleRowSave(rowIdx) {
+        clearTimeout(saveTimers[rowIdx]);
+        const rowArr = (sheet.getData())[rowIdx] || [];
+        const obj = {};
+        currentCols.forEach((col, i) => { const v = rowArr[i]; if (v !== '' && v !== null && v !== undefined) obj[col] = v; });
+        const isNew = !obj.id;
+        const delay = isNew ? 2000 : 400;
+        if (isNew && !obj.name) return;
+        saveTimers[rowIdx] = setTimeout(() => saveRow(rowIdx), delay);
+    }
+
+    async function saveRow(rowIdx) {
+        const rowArr = (sheet.getData())[rowIdx];
+        if (!rowArr) return;
+        const obj = {};
+        currentCols.forEach((col, i) => { const v = rowArr[i]; if (v !== '' && v !== null && v !== undefined) obj[col] = v; });
+        const keys = Object.keys(obj);
+        if (keys.length === 0 || (keys.length === 1 && keys[0] === 'id')) return;
+        if (!obj.id) Object.entries(currentDefaults).forEach(([col, val]) => { if (!obj[col]) obj[col] = val; });
+        showAutosave('saving', 'saving…');
+        try {
+            const resp = await fetch(url(`/api/import/${currentEntity}`), { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({rows:[obj]}) });
+            const result = await resp.json();
+            const r = result.results[0];
+            if (r.ok) {
+                if (r.created_id) {
+                    const idColIdx = currentCols.indexOf('id');
+                    if (idColIdx >= 0) { suppressAutoSave = true; sheet.setValueFromCoords(idColIdx, rowIdx, String(r.created_id)); suppressAutoSave = false; }
+                }
+                showAutosave('ok', 'saved');
+                log(`Row ${rowIdx+1}: ✓ saved${r.created_id ? ' → id '+r.created_id : ''}`, 'ok');
+            } else {
+                showAutosave('error', 'error');
+                log(`Row ${rowIdx+1}: ✗ ${friendlyError(r.response || r.error)}`, 'error');
+            }
+        } catch (e) { showAutosave('error', 'error'); log(`Row ${rowIdx+1}: save error — ${e.message}`, 'error'); }
+    }
+
+    function friendlyError(detail) {
+        const msg = (typeof detail === 'object' && detail !== null) ? (detail.error_message || JSON.stringify(detail)) : String(detail || '');
+        const notNull = msg.match(/NOT NULL constraint failed: \w+\.(\w+)/);
+        if (notNull) return `Required field not filled: ${notNull[1]}`;
+        const noCol = msg.match(/no such column: (\w+)/);
+        if (noCol) return `Computed column "${noCol[1]}" — reload schema`;
+        const unique = msg.match(/UNIQUE constraint failed: \w+\.(\w+)/);
+        if (unique) return `Duplicate value in unique field: ${unique[1]}`;
+        return msg;
+    }
+
+    function showAutosave(type, label) {
+        const badge = document.getElementById('autosaveBadge');
+        badge.textContent = label; badge.className = `autosave-badge visible ${type}`;
+        clearTimeout(autosaveFadeTimer);
+        if (type !== 'saving') autosaveFadeTimer = setTimeout(() => { badge.className = 'autosave-badge'; }, 2000);
+    }
+
+    function clearGrid() {
+        if (!sheet) return;
+        suppressAutoSave = true; sheet.setData(Array(50).fill(null).map(emptyRow)); suppressAutoSave = false;
+        log('Grid cleared', 'info'); mdStatus('Cleared', '');
+    }
+
+    function addRows(n) {
+        if (!sheet) return;
+        suppressAutoSave = true; sheet.insertRow(Array(n).fill(null).map(emptyRow)); suppressAutoSave = false;
+    }
+
+    function downloadCsv() { if (sheet) sheet.download(false); }
+
+    function uploadCsv(event) {
+        const file = event.target.files[0]; if (!file) return;
+        const reader = new FileReader();
+        reader.onload = e => {
+            const lines = e.target.result.trim().split(/\r?\n/);
+            if (!lines.length) return;
+            const headers = parseCsvRow(lines[0]);
+            const rows    = lines.slice(1).map(l => parseCsvRow(l));
+            const colMap  = headers.map(h => currentCols.indexOf(h.trim()));
+            const aligned = rows.map(row => { const out = Array(currentCols.length).fill(''); colMap.forEach((ci,i) => { if (ci >= 0 && row[i] !== undefined) out[ci] = row[i]; }); return out; });
+            suppressAutoSave = true; if (sheet) sheet.setData(aligned); suppressAutoSave = false;
+            log(`CSV uploaded: ${aligned.length} rows`, 'info');
+            const unmatched = headers.filter((h,i) => colMap[i] < 0);
+            if (unmatched.length) log(`Unmatched columns: ${unmatched.join(', ')}`, 'error');
+        };
+        reader.readAsText(file); event.target.value = '';
+    }
+
+    function parseCsvRow(line) {
+        const result = []; let cur = '', inQ = false;
+        for (let i = 0; i < line.length; i++) {
+            const c = line[i];
+            if (c === '"') { if (inQ && line[i+1] === '"') { cur += '"'; i++; } else inQ = !inQ; }
+            else if (c === ',' && !inQ) { result.push(cur); cur = ''; }
+            else cur += c;
+        }
+        result.push(cur); return result;
+    }
+
+    async function importAll() {
+        if (!sheet) return;
+        const data = sheet.getData();
+        const rows = [], rowMap = [];
+        data.forEach((row, sheetRowIdx) => {
+            const obj = {};
+            currentCols.forEach((col, i) => { const v = row[i]; if (v !== '' && v !== null && v !== undefined) obj[col] = v; });
+            const keys = Object.keys(obj);
+            if (keys.length > 0 && !(keys.length === 1 && keys[0] === 'id')) { rows.push(obj); rowMap.push(sheetRowIdx); }
+        });
+        if (rows.length === 0) { log('Nothing to import', 'info'); return; }
+        clearLog(); mdStatus(`Importing ${rows.length} rows…`, 'loading');
+        log(`Bulk importing ${rows.length} rows into ${currentEntity}…`, 'info');
+        try {
+            const resp = await fetch(url(`/api/import/${currentEntity}`), { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({rows}) });
+            const result = await resp.json();
+            let ok = 0, errs = 0;
+            const idColIdx = currentCols.indexOf('id');
+            suppressAutoSave = true;
+            result.results.forEach((r, i) => {
+                if (r.ok) { ok++; log(`Row ${i+1}: ✓ ${r.status}${r.created_id ? ' → id='+r.created_id : ''}`, 'ok'); if (r.created_id && idColIdx >= 0) sheet.setValueFromCoords(idColIdx, rowMap[i], String(r.created_id)); }
+                else { errs++; log(`Row ${i+1}: ✗ ${r.status} — ${JSON.stringify(r.response || r.error || '')}`, 'error'); }
+            });
+            suppressAutoSave = false;
+            mdStatus(`${ok} imported, ${errs} failed`, errs > 0 ? 'error' : 'ok');
+        } catch (e) { mdStatus('Request failed', 'error'); log('Import error: ' + e.message, 'error'); }
+    }
+
+    function clearLog() { document.getElementById('logPanel').innerHTML = ''; }
+    function log(msg, type) {
+        const panel = document.getElementById('logPanel');
+        const entry = document.createElement('div'); entry.className = 'log-entry ' + (type || 'info');
+        entry.textContent = `[${new Date().toLocaleTimeString()}] ${msg}`;
+        panel.appendChild(entry); panel.scrollTop = panel.scrollHeight;
+    }
+
+    // ══════════════════════════════════════════════════════════════
+    //  RECEIPTS PAGE
+    // ══════════════════════════════════════════════════════════════
+    let receiptItems    = [];
+    let allProducts     = [];
+    let receiptLookups  = {};
+    let receiptInitDone = false;
+    let receiptDecoding = false;
+
+    function rStatus(msg, type) {
+        const el = document.getElementById('receiptStatus');
+        el.textContent = msg; el.className = 'status-pill ' + (type || '');
+    }
+
+    async function initReceiptMode() {
+        receiptInitDone = true;
+        try {
+            const [schemaResp, lookupsResp, slResp] = await Promise.all([
+                fetch(url('/api/schema/products?withData=1')),
+                fetch(url('/api/lookups?entity=products')),
+                fetch(url('/api/schema/shopping_locations?withData=1')),
+            ]);
+            const schema   = await schemaResp.json();
+            receiptLookups = await lookupsResp.json();
+            const slSchema = await slResp.json();
+            allProducts = (schema.data || []).map(p => ({ id: String(p.id), name: p.name || String(p.id) }));
+            const sel = document.getElementById('walmartLocSelect');
+            const locs = slSchema.data || [];
+            sel.innerHTML = `<option value="">-- select --</option>` +
+                locs.map(l => { const isWal = /walmart/i.test(l.name||''); return `<option value="${l.id}"${isWal?' selected':''}>${l.name}</option>`; }).join('');
+        } catch (e) { console.error('Receipt init failed', e); }
+    }
+
+    async function handleReceiptFile(event) {
+        const file = event.target.files[0]; if (!file) return;
+        event.target.value = ''; await uploadReceiptPdf(file);
+    }
+
+    async function uploadReceiptPdf(file) {
+        rStatus('Parsing receipt…', 'loading');
+        const formData = new FormData(); formData.append('file', file);
+        try {
+            const resp = await fetch(url('/api/receipt/parse'), { method:'POST', body:formData });
+            const result = await resp.json();
+            if (!resp.ok || result.error) { rStatus('Parse failed: ' + (result.error || resp.statusText), 'error'); return; }
+            receiptItems = (result.items || []).map(item => ({ ...item, decoded_name:null, grocy_match:null, status:'pending' }));
+            if (!receiptItems.length) { rStatus('No items found', 'error'); return; }
+            showReceiptContent(result);
+            document.getElementById('decodeAllBtn').style.display = '';
+            rStatus(`${receiptItems.length} items parsed`, 'ok');
+        } catch (e) { rStatus('Parse error: ' + e.message, 'error'); }
+    }
+
+    function showReceiptContent(result) {
+        document.getElementById('receiptUploadZone').style.display = 'none';
+        document.getElementById('receiptContent').style.display    = 'flex';
+        document.getElementById('resetReceiptBtn').style.display   = '';
+        const parts = [result.store, result.date, result.items ? `${result.items.length} items` : null, result.total ? `$${parseFloat(result.total).toFixed(2)}` : null].filter(Boolean);
+        document.getElementById('receiptMeta').textContent = parts.join(' · ');
+        renderReceiptList(); updateStats();
+    }
+
+    function scoreMatch(receiptDesc, productName) {
+        const norm = s => s.toLowerCase().replace(/[^a-z0-9\s]/g,'').split(/\s+/).filter(Boolean);
+        const rw = norm(receiptDesc), pw = norm(productName);
+        if (!rw.length || !pw.length) return 0;
+        let score = 0;
+        for (const r of rw) for (const p of pw) { if (p===r) score+=2; else if (r.length>2&&p.length>2&&(p.startsWith(r)||r.startsWith(p))) score+=1; }
+        return score / (rw.length + pw.length);
+    }
+
+    function findBestMatch(desc) {
+        let best = null, bestScore = 0;
+        for (const p of allProducts) { const s = scoreMatch(desc, p.name); if (s > bestScore) { bestScore = s; best = p; } }
+        return bestScore >= 0.3 ? best : null;
+    }
+
+    function switchToTextMode() { document.getElementById('uploadModePdf').style.display='none'; document.getElementById('uploadModeText').style.display=''; document.getElementById('receiptUploadZone').style.cursor='default'; }
+    function switchToPdfMode()  { document.getElementById('uploadModeText').style.display='none'; document.getElementById('uploadModePdf').style.display=''; document.getElementById('receiptUploadZone').style.cursor='pointer'; }
+
+    async function parseOrderText() {
+        const text = (document.getElementById('orderTextArea').value || '').trim();
+        if (!text) { rStatus('Paste some order text first', 'error'); return; }
+        rStatus('Parsing order text…', 'loading');
+        try {
+            const resp = await fetch(url('/api/receipt/parse-text'), { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({text}) });
+            const result = await resp.json();
+            if (!resp.ok || result.error) { rStatus('Parse failed: ' + (result.error||''), 'error'); return; }
+            receiptItems = (result.items || []).map(item => { const match = findBestMatch(item.description); return {...item, decoded_name:item.description, grocy_match:match||null, status:match?'matched':'new'}; });
+            if (!receiptItems.length) { rStatus('No items found', 'error'); return; }
+            showReceiptContent(result);
+            document.getElementById('decodeAllBtn').style.display = 'none';
+            const matched = receiptItems.filter(i => i.status==='matched').length;
+            rStatus(`${receiptItems.length} items — ${matched} auto-matched`, 'ok');
+        } catch (e) { rStatus('Parse error: ' + e.message, 'error'); }
+    }
+
+    async function decodeAll() {
+        if (receiptDecoding) return;
+        const pending = receiptItems.filter(i => i.status==='pending');
+        if (!pending.length) { rStatus('Nothing to decode', ''); return; }
+        receiptDecoding = true;
+        const btn = document.getElementById('decodeAllBtn'); btn.disabled=true; btn.textContent='Decoding…';
+        rStatus(`Decoding ${pending.length} items…`, 'loading');
+        try {
+            const resp = await fetch(url('/api/receipt/decode'), { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({items:pending}) });
+            const result = await resp.json();
+            if (!resp.ok || result.error) { rStatus('Decode failed: '+(result.error||''), 'error'); return; }
+            (result.items || []).forEach((di, n) => { const orig = pending[n]; if (!orig) return; const idx = receiptItems.indexOf(orig); if (idx >= 0) Object.assign(receiptItems[idx], di); });
+            renderReceiptList(); updateStats();
+            const matched = receiptItems.filter(i=>i.status==='matched').length;
+            const newItems = receiptItems.filter(i=>i.status==='new').length;
+            rStatus(`${matched} matched · ${newItems} new items`, 'ok');
+        } catch (e) { rStatus('Decode error: '+e.message, 'error'); }
+        finally { receiptDecoding=false; btn.disabled=false; btn.textContent='Decode All'; }
+    }
+
+    function updateStats() {
+        const counts = {matched:0,new:0,pending:0,skipped:0};
+        receiptItems.forEach(i => { if (counts[i.status]!==undefined) counts[i.status]++; });
+        document.getElementById('statMatched').textContent = counts.matched;
+        document.getElementById('statNew').textContent     = counts.new;
+        document.getElementById('statPending').textContent = counts.pending;
+        document.getElementById('statSkipped').textContent = counts.skipped;
+        const ready = counts.matched;
+        document.getElementById('receiptMatchStatus').textContent = `${ready} item${ready!==1?'s':''} ready · ${counts.skipped} skipped`;
+    }
+
+    function renderReceiptList() {
+        const list = document.getElementById('receiptItemList'); list.innerHTML = '';
+        [{status:'matched',label:'Matched'},{status:'new',label:'New Items'},{status:'pending',label:'Pending'},{status:'skipped',label:'Skipped'}].forEach(({status,label}) => {
+            const group = receiptItems.map((item,idx)=>({item,idx})).filter(({item})=>item.status===status);
+            if (!group.length) return;
+            const hdr = document.createElement('div'); hdr.className='ri-section-header'; hdr.textContent=label; list.appendChild(hdr);
+            group.forEach(({item,idx}) => list.appendChild(buildItemCard(item,idx)));
+        });
+    }
+
+    function buildItemCard(item, idx) {
+        const statusLabels = {pending:'Pending',matched:'Matched',new:'New Item',skipped:'Skipped'};
+        const subParts = [];
+        if (item.decoded_name && item.decoded_name !== item.description) subParts.push(item.decoded_name);
+        if (item.barcode) subParts.push(item.barcode);
+        if (item.grocy_match) subParts.push(`→ ${item.grocy_match.name}`);
+        const priceStr = `$${parseFloat(item.price||0).toFixed(2)}`;
+        const qtyStr   = item.quantity > 1 ? `×${item.quantity}  ` : '';
+        let actionHtml = `<span class="ri-status-badge ri-status-${item.status}">${statusLabels[item.status]||'Pending'}</span>`;
+        if (item.status==='new') actionHtml += `<button class="btn" style="font-size:11px;padding:2px 8px" onclick="event.stopPropagation();toggleNewProductForm(${idx})">+ Create</button>`;
+        if (item.status!=='skipped') {
+            actionHtml += `<button class="btn" style="font-size:11px;padding:2px 8px" onclick="event.stopPropagation();toggleLinkPicker(${idx})">${item.status==='matched'?'Re-link':'Link'}</button>`;
+            actionHtml += `<button class="btn" style="font-size:11px;padding:2px 8px" onclick="event.stopPropagation();toggleSkip(${idx})">Skip</button>`;
+        } else {
+            actionHtml += `<button class="btn" style="font-size:11px;padding:2px 8px" onclick="event.stopPropagation();toggleSkip(${idx})">Restore</button>`;
+        }
+        const card = document.createElement('div'); card.className='ri-card'; card.id=`ri-card-${idx}`;
+        card.innerHTML = `<span class="ri-num">${idx+1}</span><div class="ri-body"><div class="ri-name">${escHtml(item.description)}</div>${subParts.length?`<div class="ri-sub">${escHtml(subParts.join(' · '))}</div>`:''}</div><span class="ri-price">${qtyStr}${priceStr}</span><div class="ri-actions">${actionHtml}</div>`;
+        const frag = document.createDocumentFragment(); frag.appendChild(card);
+        if (item.status==='new') { const fw=document.createElement('div'); fw.id=`ri-form-${idx}`; fw.className='ri-new-form'; fw.style.display='none'; fw.innerHTML=buildNewProductForm(idx,item); frag.appendChild(fw); }
+        if (item.status!=='skipped') { const lw=document.createElement('div'); lw.id=`ri-link-${idx}`; lw.className='ri-link-picker'; lw.style.display='none'; lw.innerHTML=`<input id="ri-link-search-${idx}" class="ri-link-search" type="text" placeholder="Search Grocy products…" oninput="filterLinkOptions(${idx})"><div id="ri-link-results-${idx}" class="ri-link-results"></div>`; frag.appendChild(lw); }
+        return frag;
+    }
+
+    function escHtml(s) { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+
+    function toggleSkip(idx) {
+        const item = receiptItems[idx]; if (!item) return;
+        item.status = item.status==='skipped' ? (item.grocy_match?'matched':(item.decoded_name?'new':'pending')) : 'skipped';
+        renderReceiptList(); updateStats();
+    }
+
+    function skipAllPending() { receiptItems.forEach(i => { if (i.status==='pending'||i.status==='new') i.status='skipped'; }); renderReceiptList(); updateStats(); }
+
+    function toggleLinkPicker(idx) {
+        const el = document.getElementById(`ri-link-${idx}`); if (!el) return;
+        const opening = el.style.display==='none';
+        document.querySelectorAll('.ri-link-picker').forEach(e => e.style.display='none');
+        if (opening) { el.style.display='block'; const input=document.getElementById(`ri-link-search-${idx}`); if (input) { input.value=''; filterLinkOptions(idx); input.focus(); } }
+    }
+
+    function filterLinkOptions(idx) {
+        const input=document.getElementById(`ri-link-search-${idx}`), results=document.getElementById(`ri-link-results-${idx}`);
+        if (!input||!results) return;
+        const q = input.value.trim().toLowerCase();
+        const matches = (q ? allProducts.filter(p=>p.name.toLowerCase().includes(q)) : allProducts).slice(0,40);
+        results.innerHTML = matches.length ? matches.map(p=>`<div class="ri-link-option" onclick="linkProduct(${idx},'${escHtml(p.id)}',${JSON.stringify(p.name)})">${escHtml(p.name)}</div>`).join('') : `<div class="ri-link-none">No products found</div>`;
+    }
+
+    function linkProduct(idx, id, name) { receiptItems[idx].grocy_match={id:String(id),name}; receiptItems[idx].status='matched'; renderReceiptList(); updateStats(); }
+
+    function toggleNewProductForm(idx) { const f=document.getElementById(`ri-form-${idx}`); if (f) f.style.display=f.style.display==='none'?'':'none'; }
+
+    function buildSelectOpts(key, includeBlank=true) {
+        const src=receiptLookups[key]||[]; let html=includeBlank?`<option value="">-- select --</option>`:'';
+        src.forEach(s=>{ html+=`<option value="${escHtml(s.id)}">${escHtml(s.name)}</option>`; }); return html;
+    }
+
+    function toTitleCase(str) { return str.toLowerCase().replace(/\b\w/g,c=>c.toUpperCase()); }
+
+    function buildNewProductForm(idx, item) {
+        const titleName = toTitleCase(item.decoded_name||item.description);
+        const optionalFields = [
+            {key:'shopping_location_id',label:'Default Shopping Location'},
+            {key:'parent_product_id',label:'Parent Product'},
+            {key:'min_stock_amount',label:'Min Stock Amount',type:'number'},
+            {key:'default_best_before_days',label:'Best Before Days',type:'number'},
+            {key:'default_best_before_days_after_open',label:'Best Before (after open)',type:'number'},
+            {key:'calories',label:'Calories',type:'number'},
+            {key:'active',label:'Active (1=yes)',type:'number'},
+        ];
+        const optHtml = optionalFields.map(f => { const src=receiptLookups[f.key]; const input=src?`<select id="np-${idx}-${f.key}">${buildSelectOpts(f.key)}</select>`:`<input type="${f.type||'text'}" id="np-${idx}-${f.key}" placeholder="${f.label}">`; return `<div class="ri-field"><label>${f.label}</label>${input}</div>`; }).join('');
+        return `<div class="ri-new-form-title">New Product</div>
+            <div class="ri-form-grid">
+                <div class="ri-field" style="grid-column:1/-1"><label>Name <span class="req">*</span></label><input type="text" id="np-${idx}-name" value="${escHtml(titleName)}"></div>
+                <div class="ri-field" style="grid-column:1/-1"><label>Description</label><textarea id="np-${idx}-description">${escHtml(item.description)}</textarea></div>
+                <div class="ri-field"><label>Product Group</label><select id="np-${idx}-product_group_id">${buildSelectOpts('product_group_id')}</select></div>
+                <div class="ri-field"><label>Storage Location <span class="req">*</span></label><select id="np-${idx}-location_id">${buildSelectOpts('location_id')}</select></div>
+                <div class="ri-field"><label>QU Purchase <span class="req">*</span></label><select id="np-${idx}-qu_id_purchase">${buildSelectOpts('qu_id_purchase')}</select></div>
+                <div class="ri-field"><label>QU Stock <span class="req">*</span></label><select id="np-${idx}-qu_id_stock">${buildSelectOpts('qu_id_stock')}</select></div>
+            </div>
+            <div class="ri-collapsible-toggle" onclick="toggleOptionalFields(${idx})"><span id="ri-expand-${idx}">▶</span> Optional fields</div>
+            <div id="ri-optional-${idx}" style="display:none"><div class="ri-form-grid">${optHtml}</div></div>
+            <div class="ri-form-actions">
+                <button class="btn btn-primary" onclick="saveNewProduct(${idx})">Save Product</button>
+                <button class="btn" onclick="toggleNewProductForm(${idx})">Cancel</button>
+                <span class="ri-form-error" id="ri-form-err-${idx}"></span>
+            </div>`;
+    }
+
+    function toggleOptionalFields(idx) {
+        const el=document.getElementById(`ri-optional-${idx}`), icon=document.getElementById(`ri-expand-${idx}`);
+        const show=el.style.display==='none'; el.style.display=show?'':'none'; icon.textContent=show?'▼':'▶';
+        if (show) { const wId=document.getElementById('walmartLocSelect').value; const slSel=document.getElementById(`np-${idx}-shopping_location_id`); if (slSel&&wId&&!slSel.value) slSel.value=wId; }
+    }
+
+    async function saveNewProduct(idx) {
+        const get=f=>{ const el=document.getElementById(`np-${idx}-${f}`); return el?el.value.trim():''; };
+        const errEl=document.getElementById(`ri-form-err-${idx}`); errEl.textContent='';
+        const name=get('name'),qu_id_purchase=get('qu_id_purchase'),qu_id_stock=get('qu_id_stock'),location_id=get('location_id');
+        const missing=[]; if(!name)missing.push('Name'); if(!qu_id_purchase)missing.push('QU Purchase'); if(!qu_id_stock)missing.push('QU Stock'); if(!location_id)missing.push('Storage Location');
+        if (missing.length) { errEl.textContent='Required: '+missing.join(', '); return; }
+        const payload={name,qu_id_purchase,qu_id_stock,location_id};
+        ['description','product_group_id','shopping_location_id','parent_product_id','min_stock_amount','default_best_before_days','default_best_before_days_after_open','calories','active'].forEach(f=>{const v=get(f);if(v)payload[f]=v;});
+        try {
+            const resp=await fetch(url('/api/import/products'),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({rows:[payload]})});
+            const result=await resp.json(); const r=result.results[0];
+            if (!r.ok) { errEl.textContent=friendlyError(r.response||r.error); return; }
+            const newProduct={id:String(r.created_id),name};
+            allProducts.push(newProduct); receiptItems[idx].grocy_match=newProduct; receiptItems[idx].status='matched';
+            rStatus(`Saved: ${name}`,'ok'); renderReceiptList(); updateStats();
+        } catch (e) { errEl.textContent='Error: '+e.message; }
+    }
+
+    async function importToGrocy() {
+        const walmartId=document.getElementById('walmartLocSelect').value;
+        const toImport=receiptItems.filter(i=>i.status==='matched'&&i.grocy_match).map(i=>({product_id:i.grocy_match.id,amount:i.quantity||1,shopping_location_id:walmartId||undefined}));
+        if (!toImport.length) { rStatus('No matched items to import','error'); return; }
+        rStatus(`Receiving ${toImport.length} items…`,'loading');
+        try {
+            const resp=await fetch(url('/api/stock/receive'),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({items:toImport})});
+            const result=await resp.json();
+            const ok=result.results.filter(r=>r.ok).length, fail=result.results.filter(r=>!r.ok).length;
+            if (!fail) { rStatus(`✓ ${ok} item${ok!==1?'s':''} added to stock`,'ok'); receiptItems.forEach(i=>{if(i.status==='matched')i.status='skipped';}); renderReceiptList(); updateStats(); }
+            else rStatus(`${ok} received, ${fail} failed`,'error');
+        } catch (e) { rStatus('Import error: '+e.message,'error'); }
+    }
+
+    function resetReceipt() {
+        receiptItems=[];
+        document.getElementById('receiptUploadZone').style.display=''; document.getElementById('receiptContent').style.display='none';
+        document.getElementById('receiptItemList').innerHTML=''; document.getElementById('decodeAllBtn').style.display='none';
+        document.getElementById('resetReceiptBtn').style.display='none'; document.getElementById('orderTextArea').value='';
+        switchToPdfMode(); rStatus('Ready','');
+    }
+
+    function setupReceiptDragDrop() {
+        const zone=document.getElementById('receiptUploadZone');
+        zone.addEventListener('dragover',e=>{if(document.getElementById('uploadModeText').style.display!=='none')return;e.preventDefault();zone.classList.add('drag-over');});
+        zone.addEventListener('dragleave',()=>zone.classList.remove('drag-over'));
+        zone.addEventListener('drop',e=>{if(document.getElementById('uploadModeText').style.display!=='none')return;e.preventDefault();zone.classList.remove('drag-over');const f=e.dataTransfer.files[0];if(f)uploadReceiptPdf(f);});
+    }
+    setupReceiptDragDrop();
+
+    // ── Boot ─────────────────────────────────────────────────────
+    checkConfig();
+    loadSchema(false);
+    showPage('masterdata');
+</script>
 </body>
 </html>

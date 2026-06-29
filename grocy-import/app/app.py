@@ -415,59 +415,81 @@ def parse_receipt():
     })
 
 
+_RECEIPT_TEXT_JUNK = re.compile(
+    r'^(?:'
+    r'\d+\s+items?'                      # "38 items"
+    r'|Substitutions?(?:\s*\(.*?\))?'    # "Substitution", "Substitutions(2 items)"
+    r'|Weight-adjusted'
+    r'|Shopped'
+    r'|(?:Multipack Quantity|Scent|Flavor|Size|Total Count|Count Per Pack|'
+    r'Count|Number of Sheets|Actual Color|Clothing Size|Color|Style|Type|'
+    r'Pattern|Material|Pack|Gender|Brand)\s*:.*'   # "Scent: Lavender", "Flavor: Loaded Taco"
+    r'|\d+\.?\d*[¢c]/\S.*'               # "17.3¢/fl oz" per-unit price
+    r'|\$[\d.]+/(?:lb|fl\s*oz|oz|ct)'    # "$1.87/lb" per-unit price
+    r'|Was\s+\$[\d.]+'                   # "Was $3.50" (pre-discount price)
+    r'|\$[\d.]+\s+ea'                    # "$3.86 ea"
+    r'|\$[\d.]+\s+from\s+savings'        # "$0.53 from savings"
+    r'|Walmart\s+Cash\b.*'               # "Walmart Cash Logo", "Walmart Cash added"
+    r'|Final\s+weight\b.*'               # "Final weight 2.6 lbs"
+    r')$',
+    re.IGNORECASE,
+)
+
+
 @app.route('/api/receipt/parse-text', methods=['POST'])
 def parse_receipt_text():
     """
     Parse copy-pasted Walmart online order text.
 
-    The Walmart order history page uses a consistent structure per item:
+    Each item block (delimited by "Add to cart" ... "Review item"/"Write a
+    review") contains the product name, optional attribute/pricing noise
+    lines, then a "Qty N" line immediately followed by the line-total price:
         Product name (one or more lines)
+        [Scent: ... / Multipack Quantity: ... / per-unit price / etc.]
         Qty N  |  Wt X.XX lb
         $X.XX
-        Add to cart
-        Write a review
+        [Was $X.XX / $X.XX ea / Walmart Cash ... ]
     """
     text = (request.json or {}).get('text', '').strip()
     if not text:
         return jsonify({'error': 'No text provided'}), 400
 
     items = []
-    # Split on the "Add to cart … Write a review" delimiter that Walmart places after each item
+    # Split on the "Add to cart … Review item" (or legacy "Write a review") delimiter
     blocks = re.split(
-        r'Add\s+to\s+cart[\s\S]*?Write\s+a\s+review',
+        r'Add\s+to\s+cart[\s\S]*?(?:Review\s+item|Write\s+a\s+review)',
         text,
         flags=re.IGNORECASE,
     )
 
     for block in blocks:
-        # Strip blank lines and the leading item-count header ("38 items")
         lines = [
             l.strip() for l in block.split('\n')
-            if l.strip() and not re.match(r'^\d+\s+items?$', l.strip(), re.I)
+            if l.strip() and not _RECEIPT_TEXT_JUNK.match(l.strip())
         ]
         if len(lines) < 2:
             continue
 
-        # Last line must be a price like "$4.68"
-        price_m = re.match(r'^\$([\d.]+)$', lines[-1])
+        # Find the "Qty N" or "Wt X.XX lb" line — the line right after it is the price
+        qty, qty_idx = 1, None
+        for i, line in enumerate(lines):
+            m = re.match(r'^Qty\s+(\d+)$', line, re.I)
+            if m:
+                qty, qty_idx = int(m.group(1)), i
+                break
+            if re.match(r'^Wt\s+[\d.]+\s*lb', line, re.I):
+                qty, qty_idx = 1, i
+                break
+
+        if qty_idx is None or qty_idx + 1 >= len(lines):
+            continue
+
+        price_m = re.match(r'^\$([\d.]+)$', lines[qty_idx + 1])
         if not price_m:
             continue
         price = float(price_m.group(1))
 
-        # Second-to-last is "Qty N" or "Wt X.XX lb" (both Walmart formats)
-        qty_m = re.match(r'^Qty\s+(\d+)$', lines[-2], re.I)
-        wt_m  = re.match(r'^Wt\s+([\d.]+)\s*lb', lines[-2], re.I)
-
-        if qty_m:
-            qty  = int(qty_m.group(1))
-            name = ' '.join(lines[:-2])
-        elif wt_m:
-            qty  = 1
-            name = ' '.join(lines[:-2])
-        else:
-            qty  = 1
-            name = ' '.join(lines[:-1])
-
+        name = ' '.join(lines[:qty_idx]).strip()
         if name and len(name) > 3:
             items.append({
                 'description': name,
@@ -477,9 +499,9 @@ def parse_receipt_text():
             })
 
     if not items:
-        return jsonify({'error': 'No items found — make sure to copy the full order list including "Add to cart / Write a review" lines'}), 400
+        return jsonify({'error': 'No items found — make sure to copy the full order list including "Add to cart / Review item" lines'}), 400
 
-    total = round(sum(i['price'] * i['quantity'] for i in items), 2)
+    total = round(sum(i['price'] for i in items), 2)
     return jsonify({'store': '', 'date': '', 'total': total, 'items': items, 'source': 'order_text'})
 
 
@@ -551,6 +573,60 @@ def decode_receipt():
         result_items.append(updated)
 
     return jsonify({'items': result_items})
+
+
+@app.route('/api/stock/entries')
+def stock_entries():
+    location_id = request.args.get('location_id')
+    params = {}
+    if location_id:
+        params['query[]'] = f'location_id={location_id}'
+    try:
+        entries_r  = requests.get(f'{GROCY_URL}/api/objects/stock', headers=grocy_headers(), params=params, timeout=10)
+        products_r = requests.get(f'{GROCY_URL}/api/objects/products', headers=grocy_headers(), timeout=10)
+        entries  = entries_r.json()  if entries_r.ok  else []
+        products = {str(p['id']): p.get('name', '') for p in (products_r.json() if products_r.ok else [])}
+        qu_r = requests.get(f'{GROCY_URL}/api/objects/quantity_units', headers=grocy_headers(), timeout=10)
+        qus  = {str(q['id']): q.get('name', '') for q in (qu_r.json() if qu_r.ok else [])}
+        for e in entries:
+            e['product_name'] = products.get(str(e.get('product_id', '')), 'Unknown')
+            e['qu_name']      = qus.get(str(e.get('qu_id', '')), '')
+        return jsonify(entries)
+    except Exception as ex:
+        return jsonify({'error': str(ex)}), 500
+
+
+@app.route('/api/stock/entries/<int:entry_id>', methods=['DELETE'])
+def delete_stock_entry(entry_id):
+    try:
+        r = requests.delete(f'{GROCY_URL}/api/objects/stock/{entry_id}', headers=grocy_headers(), timeout=10)
+        return jsonify({'ok': r.ok, 'status': r.status_code})
+    except Exception as ex:
+        return jsonify({'ok': False, 'error': str(ex)}), 500
+
+
+@app.route('/api/stock/correct', methods=['POST'])
+def stock_correct():
+    corrections = (request.json or {}).get('corrections', [])
+    results = []
+    for c in corrections:
+        product_id = c.get('product_id')
+        if not product_id:
+            continue
+        body = {
+            'new_amount':       float(c.get('new_amount', 0)),
+            'best_before_date': c.get('best_before_date') or '2999-12-31',
+            'location_id':      c.get('location_id'),
+        }
+        try:
+            r = requests.post(
+                f'{GROCY_URL}/api/stock/products/{product_id}/inventory',
+                headers=grocy_headers(), json=body, timeout=10,
+            )
+            results.append({'product_id': product_id, 'ok': r.ok, 'status': r.status_code})
+        except Exception as ex:
+            results.append({'product_id': product_id, 'ok': False, 'error': str(ex)})
+    return jsonify({'results': results})
 
 
 @app.route('/api/stock/receive', methods=['POST'])
