@@ -752,7 +752,11 @@ def meal_planner_setup():
             if chk.status_code != 200:
                 r = _post('objects/userentities', {'name': ename, 'caption': cfg['caption'],
                                                    'description': '', 'show_in_sidebar_menu': 0, 'icon_css_class': ''})
-                (log if r.ok else errors).append(f'{"Created" if r.ok else "FAILED"} entity {ename}')
+                already = r.status_code == 409 or 'SQLSTATE[23000]' in r.text
+                if r.ok or already:
+                    log.append(f'{"Entity exists" if already else "Created"} entity {ename}')
+                else:
+                    errors.append(f'FAILED entity {ename}: {r.text[:120]}')
             else:
                 log.append(f'Entity exists: {ename}')
         except Exception as e:
@@ -763,7 +767,8 @@ def meal_planner_setup():
                 r = _post('objects/userfields', {'entity': f'userentity-{ename}', 'name': fname,
                                                  'caption': fcaption, 'type': ftype,
                                                  'show_as_column_in_tables': 1, 'config': '{}'})
-                if not r.ok and r.status_code != 409:
+                already = r.status_code == 409 or 'SQLSTATE[23000]' in r.text
+                if not r.ok and not already:
                     errors.append(f'Field {ename}.{fname}: {r.text[:80]}')
             except Exception as e:
                 errors.append(f'Field {ename}.{fname}: {e}')

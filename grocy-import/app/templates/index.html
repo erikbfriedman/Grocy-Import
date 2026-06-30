@@ -1255,8 +1255,8 @@
         if (invProductsLoaded) return;
         try {
             const [pr, gr] = await Promise.all([
-                fetch(url('/api/objects/products')).then(r => r.json()),
-                fetch(url('/api/objects/product_groups')).then(r => r.json()),
+                fetch(url('/api/grocy-proxy/objects/products')).then(r => r.json()),
+                fetch(url('/api/grocy-proxy/objects/product_groups')).then(r => r.json()),
             ]);
             const products = Array.isArray(pr) ? pr : [];
             const groups = {};
