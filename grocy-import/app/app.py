@@ -667,6 +667,115 @@ def receive_stock():
     return jsonify({'results': results})
 
 
+# ── Meal Planner ─────────────────────────────────────────────────────────────
+
+_MP_ENTITIES = {
+    'mp_users': {
+        'caption': 'Meal Plan Users',
+        'fields': [
+            ('name',          'Name',             'text_short'),
+            ('color',         'Color',             'text_short'),
+            ('calorie_goal',  'Calorie Goal',      'number'),
+            ('protein_goal',  'Protein Goal g',    'number'),
+            ('carbs_goal',    'Carbs Goal g',      'number'),
+            ('fat_goal',      'Fat Goal g',        'number'),
+        ],
+    },
+    'mp_categories': {
+        'caption': 'Meal Categories',
+        'fields': [
+            ('name',       'Name',       'text_short'),
+            ('sort_order', 'Sort Order', 'number'),
+        ],
+    },
+    'mp_meals': {
+        'caption': 'Meal Plan Entries',
+        'fields': [
+            ('plan_date',    'Date',        'date'),
+            ('category_id',  'Category ID', 'number'),
+            ('recipe_name',  'Recipe Name', 'text_short'),
+            ('notes',        'Notes',       'text_long'),
+        ],
+    },
+    'mp_meal_users': {
+        'caption': 'Meal Participants',
+        'fields': [
+            ('meal_id',  'Meal ID',    'number'),
+            ('user_id',  'User ID',    'number'),
+            ('servings', 'Servings',   'number'),
+            ('calories', 'Calories',   'number'),
+            ('protein',  'Protein g',  'number'),
+            ('carbs',    'Carbs g',    'number'),
+            ('fat',      'Fat g',      'number'),
+        ],
+    },
+}
+
+_MP_DEFAULT_CATS = [('Breakfast', 1), ('Lunch', 2), ('Dinner', 3), ('Snack', 4)]
+
+
+@app.route('/api/grocy-proxy/<path:gpath>', methods=['GET', 'POST', 'PUT', 'PATCH', 'DELETE'])
+def grocy_proxy(gpath):
+    """Generic proxy to the Grocy REST API (used by Meal Planner)."""
+    target = f'{GROCY_URL}/api/{gpath}'
+    try:
+        kwargs = {'headers': grocy_headers(), 'timeout': 15}
+        if request.args:
+            kwargs['params'] = request.args.to_dict(flat=False)
+        if request.method in ('POST', 'PUT', 'PATCH') and request.data:
+            kwargs['json'] = request.get_json(silent=True) or {}
+        resp = requests.request(request.method, target, **kwargs)
+        try:
+            data = resp.json()
+        except Exception:
+            data = resp.text or ''
+        return jsonify(data), resp.status_code
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/meal-planner/setup', methods=['POST'])
+def meal_planner_setup():
+    """Create Grocy userentities + userfields for the meal planner."""
+    log, errors = [], []
+
+    def _post(path, body):
+        return requests.post(f'{GROCY_URL}/api/{path}', headers=grocy_headers(), json=body, timeout=10)
+
+    for ename, cfg in _MP_ENTITIES.items():
+        try:
+            chk = requests.get(f'{GROCY_URL}/api/objects/{ename}', headers=grocy_headers(), timeout=10)
+            if chk.status_code != 200:
+                r = _post('userentities', {'name': ename, 'caption': cfg['caption'],
+                                           'description': '', 'show_in_sidebar_menu': 0, 'icon_css_class': ''})
+                (log if r.ok else errors).append(f'{"Created" if r.ok else "FAILED"} entity {ename}')
+            else:
+                log.append(f'Entity exists: {ename}')
+        except Exception as e:
+            errors.append(f'Entity {ename}: {e}'); continue
+
+        for fname, fcaption, ftype in cfg['fields']:
+            try:
+                r = _post('userfields', {'entity': f'userentity-{ename}', 'name': fname,
+                                         'caption': fcaption, 'type': ftype,
+                                         'show_as_column_in_tables': 1, 'config': '{}'})
+                if not r.ok and r.status_code != 409:
+                    errors.append(f'Field {ename}.{fname}: {r.text[:80]}')
+            except Exception as e:
+                errors.append(f'Field {ename}.{fname}: {e}')
+
+    try:
+        cats_r = requests.get(f'{GROCY_URL}/api/objects/mp_categories', headers=grocy_headers(), timeout=10)
+        if cats_r.ok and not (cats_r.json() or []):
+            for name, order in _MP_DEFAULT_CATS:
+                _post('objects/mp_categories', {'name': name, 'sort_order': str(order)})
+            log.append('Seeded default categories')
+    except Exception as e:
+        errors.append(f'Category seed: {e}')
+
+    return jsonify({'ok': not errors, 'log': log, 'errors': errors})
+
+
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 8099))
     app.run(host='0.0.0.0', port=port, debug=False)
