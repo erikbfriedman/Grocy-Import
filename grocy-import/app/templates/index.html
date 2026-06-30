@@ -358,11 +358,17 @@
         .mp-macro-val { font-size: 13px; }
         .mp-modal-foot { padding: 12px 20px; border-top: 1px solid var(--border); display: flex; gap: 8px; justify-content: flex-end; }
         .mp-save-lib-row { display: flex; align-items: center; gap: 6px; margin-top: 6px; font-size: 12px; color: var(--text-muted); cursor: pointer; user-select: none; }
-        .mp-recipe-wrap { position: relative; }
-        .mp-library-drop { position: absolute; left: 0; right: 0; top: 100%; background: var(--surface); border: 1px solid var(--border); border-top: none; border-radius: 0 0 6px 6px; max-height: 180px; overflow-y: auto; z-index: 1000; display: none; box-shadow: 0 4px 12px rgba(0,0,0,.15); }
-        .mp-library-drop.open { display: block; }
-        .mp-lib-option { padding: 8px 12px; cursor: pointer; font-size: 13px; color: var(--text); }
-        .mp-lib-option:hover { background: rgba(99,102,241,.08); }
+        .mp-lib-filter { width: 100%; margin-bottom: 6px; box-sizing: border-box; }
+        .mp-lib-list { max-height: 180px; overflow-y: auto; border: 1px solid var(--border); border-radius: 6px; }
+        .mp-lib-list:empty { display: none; }
+        .mp-lib-item { padding: 9px 12px; cursor: pointer; font-size: 13px; color: var(--text); border-bottom: 1px solid var(--border); }
+        .mp-lib-item:last-child { border-bottom: none; }
+        .mp-lib-item:hover { background: rgba(99,102,241,.08); }
+        .mp-lib-item.selected { background: rgba(99,102,241,.13); font-weight: 600; color: var(--primary); }
+        .mp-lib-empty { padding: 10px 12px; font-size: 12px; color: var(--text-muted); border: 1px solid var(--border); border-radius: 6px; }
+        .mp-new-meal-btn { background: none; border: none; color: var(--primary); cursor: pointer; font-size: 13px; padding: 8px 0; display: inline-flex; align-items: center; gap: 4px; }
+        .mp-new-meal-btn:hover { text-decoration: underline; }
+        .mp-new-meal-input { margin-top: 6px; display: flex; flex-direction: column; gap: 6px; }
 
         /* Manage panels (users, categories) */
         .mp-manage-modal { width: 420px; }
@@ -566,16 +572,17 @@
                 </div>
                 <div class="mp-modal-body">
                     <div>
-                        <div class="mp-field-label">Recipe / Dish Name</div>
-                        <div class="mp-recipe-wrap">
-                            <input type="text" id="mpRecipeName" placeholder="e.g. Chicken Alfredo"
-                                   autocomplete="off" oninput="mpFilterLibrary()" onfocus="mpShowLibrary()" onblur="mpHideLibrary()">
-                            <div class="mp-library-drop" id="mpLibraryDrop"></div>
+                        <div class="mp-field-label">Select Meal</div>
+                        <input type="text" class="mp-lib-filter" id="mpLibFilter" placeholder="Filter meals…" oninput="mpRenderLibList()">
+                        <div class="mp-lib-list" id="mpLibList"></div>
+                        <button class="mp-new-meal-btn" id="mpNewMealBtn" onclick="mpToggleNewMeal()">+ New meal</button>
+                        <div class="mp-new-meal-input" id="mpNewMealInput" style="display:none">
+                            <input type="text" id="mpNewMealName" placeholder="e.g. Chicken Alfredo" autocomplete="off">
+                            <label class="mp-save-lib-row">
+                                <input type="checkbox" id="mpSaveToLib">
+                                <span>Save to meal library</span>
+                            </label>
                         </div>
-                        <label class="mp-save-lib-row">
-                            <input type="checkbox" id="mpSaveToLib">
-                            <span>Save to meal library</span>
-                        </label>
                     </div>
                     <div>
                         <div class="mp-field-label">Who's eating this?</div>
@@ -735,9 +742,10 @@
     let mpMealUsers   = [];     // participants for visible meals
     let mpMealLibrary = [];     // saved meal names
     let mpReady       = false;
-    let mpModalDate   = null;
-    let mpModalCatId  = null;
-    let mpEditMealId  = null;
+    let mpModalDate        = null;
+    let mpModalCatId       = null;
+    let mpEditMealId       = null;
+    let mpSelectedMealName = null;
 
     function mpApi(method, path, body) {
         const opts = { method, headers: { 'Content-Type': 'application/json' } };
@@ -916,11 +924,16 @@
         const d    = new Date(dateStr + 'T00:00:00');
         const label = d.toLocaleDateString(undefined, {weekday:'short', month:'short', day:'numeric'});
         document.getElementById('mpModalTitle').textContent = `Add Meal — ${label} · ${cat ? cat.name : ''}`;
-        document.getElementById('mpRecipeName').value = '';
+        mpSelectedMealName = null;
+        document.getElementById('mpLibFilter').value = '';
+        document.getElementById('mpNewMealName').value = '';
+        document.getElementById('mpNewMealInput').style.display = 'none';
+        document.getElementById('mpNewMealBtn').style.display = '';
         const saveChk = document.getElementById('mpSaveToLib');
         if (saveChk) saveChk.checked = false;
         const saveBtn = document.querySelector('.mp-modal-foot').querySelectorAll('button')[1];
         if (saveBtn) saveBtn.textContent = 'Add Meal';
+        mpRenderLibList();
 
         const usersHtml = mpUsers.map(u => {
             const init  = (u.name || '?').charAt(0).toUpperCase();
@@ -970,11 +983,18 @@
         const d     = new Date(m.plan_date + 'T00:00:00');
         const label = d.toLocaleDateString(undefined, {weekday:'short', month:'short', day:'numeric'});
         document.getElementById('mpModalTitle').textContent = `Edit Meal — ${label} · ${cat ? cat.name : ''}`;
-        document.getElementById('mpRecipeName').value = m.recipe_name || '';
+        // If the meal name is in the library, pre-select it; otherwise show it in new-meal mode
+        const inLib = mpMealLibrary.some(x => x.name === m.recipe_name);
+        mpSelectedMealName = m.recipe_name || null;
+        document.getElementById('mpLibFilter').value = '';
+        document.getElementById('mpNewMealInput').style.display = inLib ? 'none' : 'flex';
+        document.getElementById('mpNewMealBtn').style.display = inLib ? '' : 'none';
+        document.getElementById('mpNewMealName').value = inLib ? '' : (m.recipe_name || '');
         const saveChk = document.getElementById('mpSaveToLib');
         if (saveChk) saveChk.checked = false;
         const saveBtn = document.querySelector('.mp-modal-foot').querySelectorAll('button')[1];
         if (saveBtn) saveBtn.textContent = 'Save Changes';
+        mpRenderLibList();
 
         const existingMUs = mpMealUsers.filter(mu => String(mu.meal_id) === String(mealId));
         const usersHtml = mpUsers.map(u => {
@@ -1001,36 +1021,53 @@
         setTimeout(() => document.getElementById('mpRecipeName')?.focus(), 50);
     }
 
-    // ── Meal library combo dropdown ───────────────────────────────
-    function mpShowLibrary() {
-        mpFilterLibrary();
-    }
-
-    function mpHideLibrary() {
-        setTimeout(() => document.getElementById('mpLibraryDrop')?.classList.remove('open'), 150);
-    }
-
-    function mpFilterLibrary() {
-        const q = (document.getElementById('mpRecipeName')?.value || '').toLowerCase();
+    // ── Meal library list picker ──────────────────────────────────
+    function mpRenderLibList() {
+        const q = (document.getElementById('mpLibFilter')?.value || '').toLowerCase();
         const matches = q
             ? mpMealLibrary.filter(m => m.name.toLowerCase().includes(q))
             : mpMealLibrary;
-        const drop = document.getElementById('mpLibraryDrop');
-        if (!drop || !matches.length) { drop?.classList.remove('open'); return; }
-        drop.innerHTML = matches.map(m =>
-            `<div class="mp-lib-option" data-name="${escHtml(m.name)}" onmousedown="mpPickLibItem(this.dataset.name)">${escHtml(m.name)}</div>`
+        const list = document.getElementById('mpLibList');
+        if (!list) return;
+        if (!matches.length) {
+            list.innerHTML = '';
+            return;
+        }
+        list.innerHTML = matches.map(m =>
+            `<div class="mp-lib-item${mpSelectedMealName === m.name ? ' selected' : ''}"
+                  onclick="mpSelectLibMeal(${JSON.stringify(m.name)})">${escHtml(m.name)}</div>`
         ).join('');
-        drop.classList.add('open');
     }
 
-    function mpPickLibItem(name) {
-        document.getElementById('mpRecipeName').value = name;
-        document.getElementById('mpLibraryDrop')?.classList.remove('open');
+    function mpSelectLibMeal(name) {
+        mpSelectedMealName = name;
+        // Hide new-meal input and show the "+ New meal" button again
+        document.getElementById('mpNewMealInput').style.display = 'none';
+        document.getElementById('mpNewMealBtn').style.display = '';
+        document.getElementById('mpNewMealName').value = '';
+        mpRenderLibList();
+    }
+
+    function mpToggleNewMeal() {
+        mpSelectedMealName = null;
+        document.getElementById('mpNewMealInput').style.display = 'flex';
+        document.getElementById('mpNewMealBtn').style.display = 'none';
+        // Clear list selection
+        mpRenderLibList();
+        setTimeout(() => document.getElementById('mpNewMealName')?.focus(), 50);
     }
 
     async function saveMpMeal() {
-        const name = document.getElementById('mpRecipeName').value.trim();
-        if (!name) { document.getElementById('mpRecipeName').focus(); return; }
+        const newMealVisible = document.getElementById('mpNewMealInput')?.style.display !== 'none';
+        const name = newMealVisible
+            ? (document.getElementById('mpNewMealName')?.value.trim() || '')
+            : (mpSelectedMealName || '');
+        if (!name) {
+            newMealVisible
+                ? document.getElementById('mpNewMealName')?.focus()
+                : document.getElementById('mpLibFilter')?.focus();
+            return;
+        }
 
         const participants = mpUsers
             .filter(u => document.getElementById(`mpUC-${u.id}`)?.checked)
@@ -1082,8 +1119,8 @@
                 })
             ));
 
-            // Save to library if requested and not already there
-            if (document.getElementById('mpSaveToLib')?.checked &&
+            // Save to library if this is a new meal and user checked the box
+            if (newMealVisible && document.getElementById('mpSaveToLib')?.checked &&
                 !mpMealLibrary.some(m => m.name === name)) {
                 try { await mpApi('POST', 'meal_library', { name }); } catch(_) {}
             }
