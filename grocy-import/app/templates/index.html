@@ -1069,12 +1069,12 @@
                 <div class="mp-field-label">Add Person</div>
                 <div class="mp-add-user-row">
                     <input type="text" id="mpNewUserName" placeholder="Name" style="flex:1">
-                    <input type="number" id="mpNewUserCals" placeholder="Calorie goal" style="width:130px">
+                    <input type="number" id="mpNewUserCals" placeholder="Calorie goal (kcal)" style="width:160px">
                 </div>
                 <div class="mp-add-user-row" style="gap:8px">
-                    <input type="number" id="mpNewUserPro"  placeholder="Protein goal g"  style="flex:1">
-                    <input type="number" id="mpNewUserCarb" placeholder="Carbs goal g"     style="flex:1">
-                    <input type="number" id="mpNewUserFat"  placeholder="Fat goal g"       style="flex:1">
+                    <input type="number" id="mpNewUserPro"  placeholder="Protein goal g"  style="flex:1" oninput="mpCalcCals()">
+                    <input type="number" id="mpNewUserCarb" placeholder="Carbs goal g"    style="flex:1" oninput="mpCalcCals()">
+                    <input type="number" id="mpNewUserFat"  placeholder="Fat goal g"      style="flex:1" oninput="mpCalcCals()">
                 </div>
                 <div>
                     <div class="mp-field-label" style="margin-bottom:6px">Color</div>
@@ -1090,6 +1090,15 @@
         document.querySelectorAll('.mp-color-swatch').forEach(el => {
             el.classList.toggle('active', el.style.background === c);
         });
+    }
+
+    function mpCalcCals() {
+        const pro  = parseFloat(document.getElementById('mpNewUserPro')?.value)  || 0;
+        const carb = parseFloat(document.getElementById('mpNewUserCarb')?.value) || 0;
+        const fat  = parseFloat(document.getElementById('mpNewUserFat')?.value)  || 0;
+        const cals = Math.round(pro * 4 + carb * 4 + fat * 9);
+        const el = document.getElementById('mpNewUserCals');
+        if (el) el.value = cals || '';
     }
 
     async function saveMpUser() {
