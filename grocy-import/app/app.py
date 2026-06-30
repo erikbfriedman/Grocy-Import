@@ -674,13 +674,14 @@ def receive_stock():
 _DATA_DIR  = os.environ.get('DATA_DIR', os.path.join(os.path.dirname(os.path.abspath(__file__)), 'data'))
 _MP_DB     = os.path.join(_DATA_DIR, 'mealplanner.db')
 
-_MP_TABLES = {'users', 'categories', 'meals', 'meal_users'}
+_MP_TABLES = {'users', 'categories', 'meals', 'meal_users', 'meal_library'}
 
 _MP_COLUMNS = {
-    'users':      ['name', 'color', 'calorie_goal', 'protein_goal', 'carbs_goal', 'fat_goal'],
-    'categories': ['name', 'sort_order'],
-    'meals':      ['plan_date', 'category_id', 'recipe_name', 'notes'],
-    'meal_users': ['meal_id', 'user_id', 'servings', 'calories', 'protein', 'carbs', 'fat'],
+    'users':        ['name', 'color', 'calorie_goal', 'protein_goal', 'carbs_goal', 'fat_goal'],
+    'categories':   ['name', 'sort_order'],
+    'meals':        ['plan_date', 'category_id', 'recipe_name', 'notes'],
+    'meal_users':   ['meal_id', 'user_id', 'servings', 'calories', 'protein', 'carbs', 'fat'],
+    'meal_library': ['name'],
 }
 
 _MP_SCHEMA = '''
@@ -704,6 +705,12 @@ CREATE TABLE IF NOT EXISTS mp_meal_users (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     meal_id INTEGER, user_id INTEGER,
     servings REAL, calories REAL, protein REAL, carbs REAL, fat REAL,
+    grocy_task_id INTEGER,
+    row_created_timestamp TEXT
+);
+CREATE TABLE IF NOT EXISTS mp_meal_library (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT UNIQUE,
     row_created_timestamp TEXT
 );
 '''
@@ -721,6 +728,11 @@ def _mp_db():
 def _init_mp_db():
     with _mp_db() as con:
         con.executescript(_MP_SCHEMA)
+        for ddl in ['ALTER TABLE mp_meal_users ADD COLUMN grocy_task_id INTEGER']:
+            try:
+                con.execute(ddl)
+            except sqlite3.OperationalError:
+                pass
         if not con.execute('SELECT 1 FROM mp_categories LIMIT 1').fetchone():
             ts = datetime.utcnow().isoformat(' ', 'seconds')
             con.executemany(
@@ -775,9 +787,14 @@ def mp_create(table):
     data['row_created_timestamp'] = datetime.utcnow().isoformat(' ', 'seconds')
     cols = ', '.join(data.keys())
     placeholders = ', '.join(['?'] * len(data))
-    with _mp_db() as con:
-        cur = con.execute(f'INSERT INTO mp_{table} ({cols}) VALUES ({placeholders})', list(data.values()))
-        new_id = cur.lastrowid
+    try:
+        with _mp_db() as con:
+            cur = con.execute(f'INSERT INTO mp_{table} ({cols}) VALUES ({placeholders})', list(data.values()))
+            new_id = cur.lastrowid
+    except sqlite3.IntegrityError:
+        with _mp_db() as con:
+            row = con.execute(f'SELECT id FROM mp_{table} WHERE name = ?', [data.get('name', '')]).fetchone()
+        return jsonify({'created_object_id': row['id'] if row else 0})
     return jsonify({'created_object_id': new_id}), 201
 
 
@@ -800,9 +817,89 @@ def mp_update(table, row_id):
 def mp_delete(table, row_id):
     if table not in _MP_TABLES:
         return jsonify({'error': 'Not found'}), 404
+    if table == 'meals':
+        if GROCY_URL and GROCY_API_KEY:
+            with _mp_db() as con:
+                task_ids = [r[0] for r in con.execute(
+                    'SELECT grocy_task_id FROM mp_meal_users WHERE meal_id = ? AND grocy_task_id IS NOT NULL',
+                    [row_id],
+                ).fetchall()]
+            for tid in task_ids:
+                try:
+                    requests.delete(f'{GROCY_URL}/api/objects/tasks/{tid}',
+                                    headers=grocy_headers(), timeout=5)
+                except Exception:
+                    pass
+        with _mp_db() as con:
+            con.execute('DELETE FROM mp_meal_users WHERE meal_id = ?', [row_id])
     with _mp_db() as con:
         con.execute(f'DELETE FROM mp_{table} WHERE id = ?', [row_id])
     return jsonify({})
+
+
+@app.route('/api/mp/sync/<int:meal_id>', methods=['POST'])
+def mp_sync_to_grocy(meal_id):
+    """Mirror a meal plan entry to Grocy tasks (one task per participant, in a category named Category-User)."""
+    if not (GROCY_URL and GROCY_API_KEY):
+        return jsonify({'ok': False, 'reason': 'Grocy not configured'})
+
+    with _mp_db() as con:
+        meal = con.execute('SELECT * FROM mp_meals WHERE id = ?', [meal_id]).fetchone()
+        if not meal:
+            return jsonify({'error': 'Meal not found'}), 404
+        meal = dict(meal)
+        cat = con.execute('SELECT name FROM mp_categories WHERE id = ?', [meal['category_id']]).fetchone()
+        cat_name = cat['name'] if cat else 'Meal'
+        meal_users = [dict(r) for r in con.execute(
+            'SELECT mu.id, u.name as user_name FROM mp_meal_users mu '
+            'JOIN mp_users u ON mu.user_id = u.id WHERE mu.meal_id = ?',
+            [meal_id],
+        ).fetchall()]
+
+    if not meal_users:
+        return jsonify({'ok': True, 'synced': 0})
+
+    try:
+        cats_r = requests.get(f'{GROCY_URL}/api/objects/task_categories',
+                              headers=grocy_headers(), timeout=10)
+        grocy_cats = {c['name']: int(c['id']) for c in (cats_r.json() if cats_r.ok else [])}
+    except Exception:
+        grocy_cats = {}
+
+    synced, errors = 0, []
+    for mu in meal_users:
+        cat_key = f"{cat_name}-{mu['user_name']}"
+        if cat_key not in grocy_cats:
+            try:
+                r = requests.post(f'{GROCY_URL}/api/objects/task_categories',
+                                  headers=grocy_headers(),
+                                  json={'name': cat_key, 'description': 'Meal Planner'}, timeout=10)
+                if r.ok:
+                    grocy_cats[cat_key] = r.json().get('created_object_id')
+            except Exception as e:
+                errors.append(str(e)); continue
+
+        try:
+            r = requests.post(f'{GROCY_URL}/api/objects/tasks',
+                              headers=grocy_headers(),
+                              json={
+                                  'name':        meal['recipe_name'],
+                                  'due_date':    meal['plan_date'],
+                                  'category_id': grocy_cats.get(cat_key),
+                                  'description': meal.get('notes') or '',
+                              }, timeout=10)
+            if r.ok:
+                grocy_task_id = r.json().get('created_object_id')
+                with _mp_db() as con:
+                    con.execute('UPDATE mp_meal_users SET grocy_task_id = ? WHERE id = ?',
+                                [grocy_task_id, mu['id']])
+                synced += 1
+            else:
+                errors.append(f'task create {r.status_code}')
+        except Exception as e:
+            errors.append(str(e))
+
+    return jsonify({'ok': not errors, 'synced': synced, 'errors': errors})
 
 
 if __name__ == '__main__':

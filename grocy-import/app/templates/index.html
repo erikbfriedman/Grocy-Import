@@ -357,6 +357,7 @@
         .mp-macro-label { font-size: 11px; color: var(--text-muted); margin-bottom: 2px; }
         .mp-macro-val { font-size: 13px; }
         .mp-modal-foot { padding: 12px 20px; border-top: 1px solid var(--border); display: flex; gap: 8px; justify-content: flex-end; }
+        .mp-save-lib-row { display: flex; align-items: center; gap: 6px; margin-top: 6px; font-size: 12px; color: var(--text-muted); cursor: pointer; user-select: none; }
 
         /* Manage panels (users, categories) */
         .mp-manage-modal { width: 420px; }
@@ -535,9 +536,8 @@
 
             <!-- setup banner (hidden after init) -->
             <div class="mp-setup-banner" id="mpSetupBanner" style="display:none">
-                <h3>Meal Planner Setup</h3>
-                <p>This creates four custom userentities in your Grocy instance to store meal plan data.</p>
-                <button class="btn btn-primary" onclick="runMpSetup()">Initialize Meal Planner in Grocy</button>
+                <h3>Meal Planner</h3>
+                <p>Add users via Manage Users, then click any cell to plan a meal.</p>
             </div>
 
             <!-- nutrition strip -->
@@ -559,7 +559,13 @@
                 <div class="mp-modal-body">
                     <div>
                         <div class="mp-field-label">Recipe / Dish Name</div>
-                        <input type="text" id="mpRecipeName" placeholder="e.g. Chicken Alfredo" autocomplete="off">
+                        <input type="text" id="mpRecipeName" placeholder="e.g. Chicken Alfredo"
+                               list="mpMealLibraryList" autocomplete="off">
+                        <datalist id="mpMealLibraryList"></datalist>
+                        <label class="mp-save-lib-row">
+                            <input type="checkbox" id="mpSaveToLib">
+                            <span>Save to meal library</span>
+                        </label>
                     </div>
                     <div>
                         <div class="mp-field-label">Who's eating this?</div>
@@ -712,12 +718,13 @@
     //  MEAL PLANNER
     // ══════════════════════════════════════════════════════════════
     const MP_COLORS = ['#3b82f6','#10b981','#f59e0b','#ef4444','#8b5cf6','#ec4899','#06b6d4','#84cc16'];
-    let mpWeekStart  = null;   // Monday Date of current week
-    let mpUsers      = [];
-    let mpCategories = [];
-    let mpMeals      = [];     // entries for the visible week
-    let mpMealUsers  = [];     // participants for visible meals
-    let mpReady      = false;  // true after setup confirmed
+    let mpWeekStart   = null;   // Monday Date of current week
+    let mpUsers       = [];
+    let mpCategories  = [];
+    let mpMeals       = [];     // entries for the visible week
+    let mpMealUsers   = [];     // participants for visible meals
+    let mpMealLibrary = [];     // saved meal names
+    let mpReady       = false;
     let mpModalDate  = null;
     let mpModalCatId = null;
 
@@ -761,12 +768,14 @@
             const weekEnd = new Date(mpWeekStart);
             weekEnd.setDate(weekEnd.getDate() + 6);
 
-            const [users, cats, allMeals, allMealUsers] = await Promise.all([
+            const [users, cats, allMeals, allMealUsers, lib] = await Promise.all([
                 mpApi('GET', 'users'),
                 mpApi('GET', 'categories'),
                 mpApi('GET', 'meals'),
                 mpApi('GET', 'meal_users'),
+                mpApi('GET', 'meal_library'),
             ]);
+            mpMealLibrary = Array.isArray(lib) ? lib : [];
 
             mpUsers      = (Array.isArray(users)     ? users     : []).map(u => ({...u, id: String(u.id)}));
             mpCategories = (Array.isArray(cats)      ? cats      : [])
@@ -856,7 +865,7 @@
 
         // If no categories yet, prompt
         if (!mpCategories.length) {
-            html += `<div style="grid-column:1/-1;padding:24px;text-align:center;color:var(--text-muted)">No meal categories found. Run setup to create default categories.</div>`;
+            html += `<div style="grid-column:1/-1;padding:24px;text-align:center;color:var(--text-muted)">No meal categories found.</div>`;
         }
 
         grid.innerHTML = html;
@@ -896,6 +905,10 @@
         const label = d.toLocaleDateString(undefined, {weekday:'short', month:'short', day:'numeric'});
         document.getElementById('mpModalTitle').textContent = `Add Meal — ${label} · ${cat ? cat.name : ''}`;
         document.getElementById('mpRecipeName').value = '';
+        const dl = document.getElementById('mpMealLibraryList');
+        if (dl) dl.innerHTML = mpMealLibrary.map(m => `<option value="${escHtml(m.name)}"></option>`).join('');
+        const saveChk = document.getElementById('mpSaveToLib');
+        if (saveChk) saveChk.checked = false;
 
         const usersHtml = mpUsers.map(u => {
             const init  = (u.name || '?').charAt(0).toUpperCase();
@@ -975,6 +988,15 @@
                 })
             ));
 
+            // Save to library if requested and not already there
+            if (document.getElementById('mpSaveToLib')?.checked &&
+                !mpMealLibrary.some(m => m.name === name)) {
+                try { await mpApi('POST', 'meal_library', { name }); } catch(_) {}
+            }
+
+            // Mirror to Grocy tasks (fire-and-forget)
+            try { await fetch(url('/api/mp/sync/' + mealId), { method: 'POST' }); } catch(_) {}
+
             closeMpModal();
             await loadMpData();
         } catch (e) {
@@ -987,9 +1009,6 @@
     async function deleteMpMeal(mealId, e) {
         e.stopPropagation();
         if (!confirm('Remove this meal?')) return;
-        // Delete participants first
-        const mus = mpMealUsers.filter(mu => mu.meal_id === mealId);
-        await Promise.all(mus.map(mu => mpApi('DELETE', `meal_users/${mu.id}`)));
         await mpApi('DELETE', `meals/${mealId}`);
         await loadMpData();
     }
