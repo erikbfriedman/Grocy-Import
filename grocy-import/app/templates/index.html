@@ -1071,10 +1071,22 @@
                     <input type="text" id="mpNewUserName" placeholder="Name" style="flex:1">
                     <input type="number" id="mpNewUserCals" placeholder="Calorie goal (kcal)" style="width:160px">
                 </div>
-                <div class="mp-add-user-row" style="gap:8px">
-                    <input type="number" id="mpNewUserPro"  placeholder="Protein goal g"  style="flex:1" oninput="mpCalcCals()">
-                    <input type="number" id="mpNewUserCarb" placeholder="Carbs goal g"    style="flex:1" oninput="mpCalcCals()">
-                    <input type="number" id="mpNewUserFat"  placeholder="Fat goal g"      style="flex:1" oninput="mpCalcCals()">
+                <div class="mp-add-user-row" style="gap:8px;align-items:flex-start">
+                    <div style="flex:1;display:flex;flex-direction:column;gap:3px">
+                        <div class="mp-macro-label">Protein <span style="color:var(--text-muted);font-weight:400">(4 cal/g)</span></div>
+                        <input type="number" id="mpNewUserPro" placeholder="g" style="width:100%" oninput="mpCalcCals()">
+                        <div style="font-size:11px;color:var(--text-muted)" id="mpProPct"></div>
+                    </div>
+                    <div style="flex:1;display:flex;flex-direction:column;gap:3px">
+                        <div class="mp-macro-label">Carbs <span style="color:var(--text-muted);font-weight:400">(4 cal/g)</span></div>
+                        <input type="number" id="mpNewUserCarb" placeholder="g" style="width:100%" oninput="mpCalcCals()">
+                        <div style="font-size:11px;color:var(--text-muted)" id="mpCarbPct"></div>
+                    </div>
+                    <div style="flex:1;display:flex;flex-direction:column;gap:3px">
+                        <div class="mp-macro-label">Fat <span style="color:var(--text-muted);font-weight:400">(9 cal/g)</span></div>
+                        <input type="number" id="mpNewUserFat" placeholder="g" style="width:100%" oninput="mpCalcCals()">
+                        <div style="font-size:11px;color:var(--text-muted)" id="mpFatPct"></div>
+                    </div>
                 </div>
                 <div>
                     <div class="mp-field-label" style="margin-bottom:6px">Color</div>
@@ -1096,9 +1108,19 @@
         const pro  = parseFloat(document.getElementById('mpNewUserPro')?.value)  || 0;
         const carb = parseFloat(document.getElementById('mpNewUserCarb')?.value) || 0;
         const fat  = parseFloat(document.getElementById('mpNewUserFat')?.value)  || 0;
-        const cals = Math.round(pro * 4 + carb * 4 + fat * 9);
-        const el = document.getElementById('mpNewUserCals');
-        if (el) el.value = cals || '';
+        const proCals  = pro * 4;
+        const carbCals = carb * 4;
+        const fatCals  = fat * 9;
+        const total = proCals + carbCals + fatCals;
+        const calEl = document.getElementById('mpNewUserCals');
+        if (calEl) calEl.value = total ? Math.round(total) : '';
+        const pct = (n) => total ? Math.round(n / total * 100) + '%' : '';
+        const proEl  = document.getElementById('mpProPct');
+        const carbEl = document.getElementById('mpCarbPct');
+        const fatEl  = document.getElementById('mpFatPct');
+        if (proEl)  proEl.textContent  = pct(proCals);
+        if (carbEl) carbEl.textContent = pct(carbCals);
+        if (fatEl)  fatEl.textContent  = pct(fatCals);
     }
 
     async function saveMpUser() {
