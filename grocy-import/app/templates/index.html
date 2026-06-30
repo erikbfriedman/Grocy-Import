@@ -273,6 +273,20 @@
             border-radius: 5px; padding: 5px 8px; font-size: 12px; outline: none; width: 100%;
         }
         .inv-current { font-size: 18px; font-weight: 600; color: var(--text-muted); }
+
+        /* ── Inventory add-product picker ──────────────────────── */
+        .inv-add-panel { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; overflow: hidden; margin: 0 24px 16px; display: none; }
+        .inv-add-panel.open { display: block; }
+        .inv-add-search { padding: 10px 14px; border-bottom: 1px solid var(--border); }
+        .inv-add-search input { width: 100%; box-sizing: border-box; background: var(--bg); border: 1px solid var(--border); color: var(--text); border-radius: 6px; padding: 8px 12px; font-size: 14px; outline: none; }
+        .inv-add-search input:focus { border-color: var(--primary); }
+        .inv-add-list { max-height: 380px; overflow-y: auto; }
+        .inv-add-item { padding: 14px 18px; cursor: pointer; border-bottom: 1px solid var(--border); display: flex; flex-direction: column; gap: 4px; min-height: 64px; justify-content: center; }
+        .inv-add-item:hover { background: rgba(255,255,255,0.05); }
+        .inv-add-item:last-child { border-bottom: none; }
+        .inv-add-name { font-size: 15px; font-weight: 600; color: var(--text); line-height: 1.3; }
+        .inv-add-sub { font-size: 12px; color: var(--text-muted); }
+        .inv-add-empty { padding: 24px; text-align: center; color: var(--text-muted); font-size: 13px; }
     </style>
 </head>
 <body>
@@ -375,8 +389,18 @@
                 <span class="page-title">Inventory</span>
                 <div class="ph-sep"></div>
                 <select id="invAreaSelect" onchange="loadInventory()"><option value="">— select area —</option></select>
+                <button class="btn" id="invAddBtn" onclick="toggleInvAddPanel()" disabled>+ Add Product</button>
                 <button class="btn btn-success" onclick="submitCorrections()" id="invSubmitBtn" disabled>Submit Corrections</button>
                 <span class="status-pill" id="invStatus"></span>
+            </div>
+
+            <div id="invAddPanel" class="inv-add-panel">
+                <div class="inv-add-search">
+                    <input type="text" id="invAddSearch" placeholder="Search products…" oninput="filterInvProducts()">
+                </div>
+                <div class="inv-add-list" id="invAddList">
+                    <div class="inv-add-empty">Select an area first</div>
+                </div>
             </div>
 
             <div class="tiles-row" id="invTiles">
@@ -600,12 +624,87 @@
     // ══════════════════════════════════════════════════════════════
     let invData = [];   // [{product_id, product_name, current_amount, best_before_date, location_id}]
 
+    // ── Inventory product picker ──────────────────────────────────
+    let invProductMap = {};   // pid → { name, group_name, parent_name }
+    let invProductsLoaded = false;
+
+    async function loadInvProducts() {
+        if (invProductsLoaded) return;
+        try {
+            const [pr, gr] = await Promise.all([
+                fetch(url('/api/objects/products')).then(r => r.json()),
+                fetch(url('/api/objects/product_groups')).then(r => r.json()),
+            ]);
+            const products = Array.isArray(pr) ? pr : [];
+            const groups = {};
+            (Array.isArray(gr) ? gr : []).forEach(g => { groups[String(g.id)] = g.name || ''; });
+            const nameById = {};
+            products.forEach(p => { nameById[String(p.id)] = p.name || ''; });
+            invProductMap = {};
+            products.forEach(p => {
+                invProductMap[String(p.id)] = {
+                    name: p.name || '',
+                    group_name: groups[String(p.product_group_id)] || '',
+                    parent_name: p.parent_product_id ? (nameById[String(p.parent_product_id)] || '') : '',
+                };
+            });
+            invProductsLoaded = true;
+        } catch (e) { console.error('Failed to load products for inventory picker', e); }
+    }
+
+    function toggleInvAddPanel() {
+        const panel = document.getElementById('invAddPanel');
+        const isOpen = panel.classList.toggle('open');
+        if (isOpen) {
+            document.getElementById('invAddSearch').value = '';
+            renderInvAddList('');
+            setTimeout(() => document.getElementById('invAddSearch')?.focus(), 50);
+        }
+    }
+
+    function filterInvProducts() {
+        renderInvAddList((document.getElementById('invAddSearch')?.value || '').toLowerCase());
+    }
+
+    function renderInvAddList(q) {
+        const list = document.getElementById('invAddList');
+        const addedIds = new Set(invData.map(p => String(p.product_id)));
+        const entries = Object.entries(invProductMap)
+            .filter(([pid, p]) => !addedIds.has(pid) && (!q || p.name.toLowerCase().includes(q)))
+            .sort(([,a], [,b]) => a.name.localeCompare(b.name));
+        if (!entries.length) {
+            list.innerHTML = `<div class="inv-add-empty">${q ? 'No products match' : 'All products already added'}</div>`;
+            return;
+        }
+        list.innerHTML = entries.map(([pid, p]) => {
+            const sub = p.group_name + (p.parent_name ? ` › ${escHtml(p.parent_name)}` : '');
+            return `<div class="inv-add-item" onclick="addProductToInventory('${escHtml(pid)}')">
+                <div class="inv-add-name">${escHtml(p.name)}</div>
+                ${sub ? `<div class="inv-add-sub">${escHtml(p.group_name)}${p.parent_name ? ` › ${escHtml(p.parent_name)}` : ''}</div>` : ''}
+            </div>`;
+        }).join('');
+    }
+
+    function addProductToInventory(pid) {
+        if (invProductMap[pid] === undefined) return;
+        const p = invProductMap[pid];
+        const locId = document.getElementById('invAreaSelect').value;
+        invData.push({ product_id: pid, product_name: p.name, amount: 0, best_before_date: '', location_id: locId });
+        invData.sort((a, b) => a.product_name.localeCompare(b.product_name));
+        renderInvTable(invData);
+        filterInvProducts();
+    }
+
     async function loadInventory() {
         const locId = document.getElementById('invAreaSelect').value;
         const status = document.getElementById('invStatus');
+        // Close the picker and reset area-change state
+        const panel = document.getElementById('invAddPanel');
+        if (panel) { panel.classList.remove('open'); }
         if (!locId) { renderInvTable([]); return; }
         status.textContent = 'Loading…'; status.className = 'status-pill loading';
         try {
+            await loadInvProducts();
             const r = await fetch(url('/api/stock/entries?location_id=' + locId));
             const entries = await r.json();
             // Group by product_id — sum amounts, take nearest non-far-future BBE
@@ -624,6 +723,7 @@
             invData = Object.values(byProduct).sort((a,b) => a.product_name.localeCompare(b.product_name));
             renderInvTable(invData);
             document.getElementById('invSubmitBtn').disabled = false;
+            document.getElementById('invAddBtn').disabled = false;
             status.textContent = `${invData.length} products`; status.className = 'status-pill ok';
         } catch (e) {
             status.textContent = 'Error: ' + e.message; status.className = 'status-pill error';
