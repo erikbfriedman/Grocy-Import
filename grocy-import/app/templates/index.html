@@ -748,10 +748,14 @@
         updateMpWeekLabel();
         document.getElementById('mpStatus').textContent = 'Checking…';
         document.getElementById('mpStatus').className = 'status-pill loading';
-        // Check if entities exist
         try {
-            const test = await mpApi('GET', 'objects/mp_users');
-            if (Array.isArray(test)) {
+            const resp = await fetch(url('/api/grocy-proxy/objects/mp_users'));
+            const test = await resp.json();
+            if (resp.status === 503) {
+                document.getElementById('mpSetupBanner').style.display = 'none';
+                document.getElementById('mpStatus').textContent = 'Grocy not configured';
+                document.getElementById('mpStatus').className = 'status-pill warn';
+            } else if (Array.isArray(test)) {
                 mpReady = true;
                 document.getElementById('mpSetupBanner').style.display = 'none';
                 await loadMpData();

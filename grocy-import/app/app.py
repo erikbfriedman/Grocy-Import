@@ -717,6 +717,8 @@ _MP_DEFAULT_CATS = [('Breakfast', 1), ('Lunch', 2), ('Dinner', 3), ('Snack', 4)]
 @app.route('/api/grocy-proxy/<path:gpath>', methods=['GET', 'POST', 'PUT', 'PATCH', 'DELETE'])
 def grocy_proxy(gpath):
     """Generic proxy to the Grocy REST API (used by Meal Planner)."""
+    if not (GROCY_URL and GROCY_API_KEY):
+        return jsonify({'error': 'Grocy not configured'}), 503
     target = f'{GROCY_URL}/api/{gpath}'
     try:
         kwargs = {'headers': grocy_headers(), 'timeout': 15}
@@ -737,6 +739,8 @@ def grocy_proxy(gpath):
 @app.route('/api/meal-planner/setup', methods=['POST'])
 def meal_planner_setup():
     """Create Grocy userentities + userfields for the meal planner."""
+    if not (GROCY_URL and GROCY_API_KEY):
+        return jsonify({'ok': False, 'log': [], 'errors': ['Grocy not configured']}), 503
     log, errors = [], []
 
     def _post(path, body):
@@ -746,8 +750,8 @@ def meal_planner_setup():
         try:
             chk = requests.get(f'{GROCY_URL}/api/objects/{ename}', headers=grocy_headers(), timeout=10)
             if chk.status_code != 200:
-                r = _post('userentities', {'name': ename, 'caption': cfg['caption'],
-                                           'description': '', 'show_in_sidebar_menu': 0, 'icon_css_class': ''})
+                r = _post('objects/userentities', {'name': ename, 'caption': cfg['caption'],
+                                                   'description': '', 'show_in_sidebar_menu': 0, 'icon_css_class': ''})
                 (log if r.ok else errors).append(f'{"Created" if r.ok else "FAILED"} entity {ename}')
             else:
                 log.append(f'Entity exists: {ename}')
@@ -756,9 +760,9 @@ def meal_planner_setup():
 
         for fname, fcaption, ftype in cfg['fields']:
             try:
-                r = _post('userfields', {'entity': f'userentity-{ename}', 'name': fname,
-                                         'caption': fcaption, 'type': ftype,
-                                         'show_as_column_in_tables': 1, 'config': '{}'})
+                r = _post('objects/userfields', {'entity': f'userentity-{ename}', 'name': fname,
+                                                 'caption': fcaption, 'type': ftype,
+                                                 'show_as_column_in_tables': 1, 'config': '{}'})
                 if not r.ok and r.status_code != 409:
                     errors.append(f'Field {ename}.{fname}: {r.text[:80]}')
             except Exception as e:
