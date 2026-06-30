@@ -528,7 +528,7 @@
                     <button class="mp-nav-btn" onclick="mpGoToday()">Today</button>
                 </div>
                 <div class="ph-sep"></div>
-                <button class="btn" onclick="openMpUserManager()">Manage Users</button>
+                <button class="btn" id="mpManageUsersBtn" onclick="openMpUserManager()" disabled>Manage Users</button>
                 <span class="status-pill" id="mpStatus"></span>
             </div>
 
@@ -758,6 +758,7 @@
             } else if (Array.isArray(test)) {
                 mpReady = true;
                 document.getElementById('mpSetupBanner').style.display = 'none';
+                document.getElementById('mpManageUsersBtn').disabled = false;
                 await loadMpData();
             } else {
                 document.getElementById('mpSetupBanner').style.display = '';
@@ -778,6 +779,7 @@
             if (r.ok) {
                 document.getElementById('mpSetupBanner').style.display = 'none';
                 mpReady = true;
+                document.getElementById('mpManageUsersBtn').disabled = false;
                 await loadMpData();
             } else {
                 alert('Setup failed:\n' + (r.errors || []).join('\n'));
