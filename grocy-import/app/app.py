@@ -3,6 +3,8 @@ import io
 import json
 import os
 import re
+import sqlite3
+from datetime import datetime
 
 import requests
 from flask import Flask, render_template, request, jsonify
@@ -667,56 +669,72 @@ def receive_stock():
     return jsonify({'results': results})
 
 
-# ── Meal Planner ─────────────────────────────────────────────────────────────
+# ── Meal Planner (local SQLite) ───────────────────────────────────────────────
 
-_MP_ENTITIES = {
-    'mp_users': {
-        'caption': 'Meal Plan Users',
-        'fields': [
-            ('name',          'Name',             'text_short'),
-            ('color',         'Color',             'text_short'),
-            ('calorie_goal',  'Calorie Goal',      'number'),
-            ('protein_goal',  'Protein Goal g',    'number'),
-            ('carbs_goal',    'Carbs Goal g',      'number'),
-            ('fat_goal',      'Fat Goal g',        'number'),
-        ],
-    },
-    'mp_categories': {
-        'caption': 'Meal Categories',
-        'fields': [
-            ('name',       'Name',       'text_short'),
-            ('sort_order', 'Sort Order', 'number'),
-        ],
-    },
-    'mp_meals': {
-        'caption': 'Meal Plan Entries',
-        'fields': [
-            ('plan_date',    'Date',        'date'),
-            ('category_id',  'Category ID', 'number'),
-            ('recipe_name',  'Recipe Name', 'text_short'),
-            ('notes',        'Notes',       'text_long'),
-        ],
-    },
-    'mp_meal_users': {
-        'caption': 'Meal Participants',
-        'fields': [
-            ('meal_id',  'Meal ID',    'number'),
-            ('user_id',  'User ID',    'number'),
-            ('servings', 'Servings',   'number'),
-            ('calories', 'Calories',   'number'),
-            ('protein',  'Protein g',  'number'),
-            ('carbs',    'Carbs g',    'number'),
-            ('fat',      'Fat g',      'number'),
-        ],
-    },
+_DATA_DIR  = os.environ.get('DATA_DIR', os.path.join(os.path.dirname(os.path.abspath(__file__)), 'data'))
+_MP_DB     = os.path.join(_DATA_DIR, 'mealplanner.db')
+
+_MP_TABLES = {'users', 'categories', 'meals', 'meal_users'}
+
+_MP_COLUMNS = {
+    'users':      ['name', 'color', 'calorie_goal', 'protein_goal', 'carbs_goal', 'fat_goal'],
+    'categories': ['name', 'sort_order'],
+    'meals':      ['plan_date', 'category_id', 'recipe_name', 'notes'],
+    'meal_users': ['meal_id', 'user_id', 'servings', 'calories', 'protein', 'carbs', 'fat'],
 }
+
+_MP_SCHEMA = '''
+CREATE TABLE IF NOT EXISTS mp_users (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT, color TEXT,
+    calorie_goal REAL, protein_goal REAL, carbs_goal REAL, fat_goal REAL,
+    row_created_timestamp TEXT
+);
+CREATE TABLE IF NOT EXISTS mp_categories (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT, sort_order INTEGER,
+    row_created_timestamp TEXT
+);
+CREATE TABLE IF NOT EXISTS mp_meals (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    plan_date TEXT, category_id INTEGER, recipe_name TEXT, notes TEXT,
+    row_created_timestamp TEXT
+);
+CREATE TABLE IF NOT EXISTS mp_meal_users (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    meal_id INTEGER, user_id INTEGER,
+    servings REAL, calories REAL, protein REAL, carbs REAL, fat REAL,
+    row_created_timestamp TEXT
+);
+'''
 
 _MP_DEFAULT_CATS = [('Breakfast', 1), ('Lunch', 2), ('Dinner', 3), ('Snack', 4)]
 
 
+def _mp_db():
+    os.makedirs(_DATA_DIR, exist_ok=True)
+    con = sqlite3.connect(_MP_DB)
+    con.row_factory = sqlite3.Row
+    return con
+
+
+def _init_mp_db():
+    with _mp_db() as con:
+        con.executescript(_MP_SCHEMA)
+        if not con.execute('SELECT 1 FROM mp_categories LIMIT 1').fetchone():
+            ts = datetime.utcnow().isoformat(' ', 'seconds')
+            con.executemany(
+                'INSERT INTO mp_categories (name, sort_order, row_created_timestamp) VALUES (?,?,?)',
+                [(n, o, ts) for n, o in _MP_DEFAULT_CATS],
+            )
+
+
+_init_mp_db()
+
+
 @app.route('/api/grocy-proxy/<path:gpath>', methods=['GET', 'POST', 'PUT', 'PATCH', 'DELETE'])
 def grocy_proxy(gpath):
-    """Generic proxy to the Grocy REST API (used by Meal Planner)."""
+    """Generic proxy to the Grocy REST API."""
     if not (GROCY_URL and GROCY_API_KEY):
         return jsonify({'error': 'Grocy not configured'}), 503
     target = f'{GROCY_URL}/api/{gpath}'
@@ -736,53 +754,55 @@ def grocy_proxy(gpath):
         return jsonify({'error': str(e)}), 500
 
 
-@app.route('/api/meal-planner/setup', methods=['POST'])
-def meal_planner_setup():
-    """Create Grocy userentities + userfields for the meal planner."""
-    if not (GROCY_URL and GROCY_API_KEY):
-        return jsonify({'ok': False, 'log': [], 'errors': ['Grocy not configured']}), 503
-    log, errors = [], []
+# ── Meal Planner CRUD (local SQLite) ──────────────────────────────────────────
 
-    def _post(path, body):
-        return requests.post(f'{GROCY_URL}/api/{path}', headers=grocy_headers(), json=body, timeout=10)
+@app.route('/api/mp/<table>', methods=['GET'])
+def mp_list(table):
+    if table not in _MP_TABLES:
+        return jsonify({'error': 'Not found'}), 404
+    with _mp_db() as con:
+        rows = [dict(r) for r in con.execute(f'SELECT * FROM mp_{table} ORDER BY id').fetchall()]
+    return jsonify(rows)
 
-    for ename, cfg in _MP_ENTITIES.items():
-        try:
-            chk = requests.get(f'{GROCY_URL}/api/objects/{ename}', headers=grocy_headers(), timeout=10)
-            if chk.status_code != 200:
-                r = _post('objects/userentities', {'name': ename, 'caption': cfg['caption'],
-                                                   'description': '', 'show_in_sidebar_menu': 0, 'icon_css_class': ''})
-                already = r.status_code == 409 or 'SQLSTATE[23000]' in r.text
-                if r.ok or already:
-                    log.append(f'{"Entity exists" if already else "Created"} entity {ename}')
-                else:
-                    errors.append(f'FAILED entity {ename}: {r.text[:120]}')
-            else:
-                log.append(f'Entity exists: {ename}')
-        except Exception as e:
-            errors.append(f'Entity {ename}: {e}'); continue
 
-        for fname, fcaption, ftype in cfg['fields']:
-            try:
-                r = _post('objects/userfields', {'entity': f'userentity-{ename}', 'name': fname,
-                                                 'caption': fcaption, 'type': ftype,
-                                                 'show_as_column_in_tables': 1, 'config': '{}'})
-                already = r.status_code == 409 or 'SQLSTATE[23000]' in r.text
-                if not r.ok and not already:
-                    errors.append(f'Field {ename}.{fname}: {r.text[:80]}')
-            except Exception as e:
-                errors.append(f'Field {ename}.{fname}: {e}')
+@app.route('/api/mp/<table>', methods=['POST'])
+def mp_create(table):
+    if table not in _MP_TABLES:
+        return jsonify({'error': 'Not found'}), 404
+    allowed = _MP_COLUMNS[table]
+    raw = request.get_json(silent=True) or {}
+    data = {k: raw[k] for k in allowed if k in raw}
+    data['row_created_timestamp'] = datetime.utcnow().isoformat(' ', 'seconds')
+    cols = ', '.join(data.keys())
+    placeholders = ', '.join(['?'] * len(data))
+    with _mp_db() as con:
+        cur = con.execute(f'INSERT INTO mp_{table} ({cols}) VALUES ({placeholders})', list(data.values()))
+        new_id = cur.lastrowid
+    return jsonify({'created_object_id': new_id}), 201
 
-    try:
-        cats_r = requests.get(f'{GROCY_URL}/api/objects/mp_categories', headers=grocy_headers(), timeout=10)
-        if cats_r.ok and not (cats_r.json() or []):
-            for name, order in _MP_DEFAULT_CATS:
-                _post('objects/mp_categories', {'name': name, 'sort_order': str(order)})
-            log.append('Seeded default categories')
-    except Exception as e:
-        errors.append(f'Category seed: {e}')
 
-    return jsonify({'ok': not errors, 'log': log, 'errors': errors})
+@app.route('/api/mp/<table>/<int:row_id>', methods=['PUT'])
+def mp_update(table, row_id):
+    if table not in _MP_TABLES:
+        return jsonify({'error': 'Not found'}), 404
+    allowed = _MP_COLUMNS[table]
+    raw = request.get_json(silent=True) or {}
+    data = {k: raw[k] for k in allowed if k in raw}
+    if not data:
+        return jsonify({}), 204
+    sets = ', '.join(f'{k} = ?' for k in data)
+    with _mp_db() as con:
+        con.execute(f'UPDATE mp_{table} SET {sets} WHERE id = ?', [*data.values(), row_id])
+    return jsonify({})
+
+
+@app.route('/api/mp/<table>/<int:row_id>', methods=['DELETE'])
+def mp_delete(table, row_id):
+    if table not in _MP_TABLES:
+        return jsonify({'error': 'Not found'}), 404
+    with _mp_db() as con:
+        con.execute(f'DELETE FROM mp_{table} WHERE id = ?', [row_id])
+    return jsonify({})
 
 
 if __name__ == '__main__':

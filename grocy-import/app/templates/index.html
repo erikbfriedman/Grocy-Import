@@ -263,6 +263,7 @@
         }
         .inv-qty-input:focus { border-color: var(--primary); }
         .inv-qty-input.changed { border-color: var(--warning); background: rgba(245,158,11,0.08); }
+        #invTable tbody tr.inv-row-changed { background: rgba(245,158,11,0.07); }
         .inv-bbe-input {
             background: var(--surface2); border: 1px solid var(--border); color: var(--text);
             border-radius: 5px; padding: 5px 8px; font-size: 12px; outline: none; width: 130px;
@@ -723,7 +724,7 @@
     function mpApi(method, path, body) {
         const opts = { method, headers: { 'Content-Type': 'application/json' } };
         if (body !== undefined) opts.body = JSON.stringify(body);
-        return fetch(url('/api/grocy-proxy/' + path), opts).then(r => r.json());
+        return fetch(url('/api/mp/' + path), opts).then(r => r.json());
     }
 
     function mpMonday(d) {
@@ -746,49 +747,10 @@
     async function initMealPlanner() {
         if (mpWeekStart === null) mpWeekStart = mpMonday(new Date());
         updateMpWeekLabel();
-        document.getElementById('mpStatus').textContent = 'Checking…';
-        document.getElementById('mpStatus').className = 'status-pill loading';
-        try {
-            const resp = await fetch(url('/api/grocy-proxy/objects/mp_users'));
-            const test = await resp.json();
-            if (resp.status === 503) {
-                document.getElementById('mpSetupBanner').style.display = 'none';
-                document.getElementById('mpStatus').textContent = 'Grocy not configured';
-                document.getElementById('mpStatus').className = 'status-pill warn';
-            } else if (Array.isArray(test)) {
-                mpReady = true;
-                document.getElementById('mpSetupBanner').style.display = 'none';
-                document.getElementById('mpManageUsersBtn').disabled = false;
-                await loadMpData();
-            } else {
-                document.getElementById('mpSetupBanner').style.display = '';
-                document.getElementById('mpStatus').textContent = 'Not initialized';
-                document.getElementById('mpStatus').className = 'status-pill warn';
-            }
-        } catch (e) {
-            document.getElementById('mpStatus').textContent = 'Error';
-            document.getElementById('mpStatus').className = 'status-pill error';
-        }
-    }
-
-    async function runMpSetup() {
-        const btn = document.querySelector('#mpSetupBanner button');
-        btn.disabled = true; btn.textContent = 'Setting up…';
-        try {
-            const r = await fetch(url('/api/meal-planner/setup'), { method: 'POST' }).then(r => r.json());
-            if (r.ok) {
-                document.getElementById('mpSetupBanner').style.display = 'none';
-                mpReady = true;
-                document.getElementById('mpManageUsersBtn').disabled = false;
-                await loadMpData();
-            } else {
-                alert('Setup failed:\n' + (r.errors || []).join('\n'));
-                btn.disabled = false; btn.textContent = 'Initialize Meal Planner in Grocy';
-            }
-        } catch (e) {
-            alert('Setup error: ' + e.message);
-            btn.disabled = false; btn.textContent = 'Initialize Meal Planner in Grocy';
-        }
+        mpReady = true;
+        document.getElementById('mpSetupBanner').style.display = 'none';
+        document.getElementById('mpManageUsersBtn').disabled = false;
+        await loadMpData();
     }
 
     async function loadMpData() {
@@ -800,10 +762,10 @@
             weekEnd.setDate(weekEnd.getDate() + 6);
 
             const [users, cats, allMeals, allMealUsers] = await Promise.all([
-                mpApi('GET', 'objects/mp_users'),
-                mpApi('GET', 'objects/mp_categories'),
-                mpApi('GET', 'objects/mp_meals'),
-                mpApi('GET', 'objects/mp_meal_users'),
+                mpApi('GET', 'users'),
+                mpApi('GET', 'categories'),
+                mpApi('GET', 'meals'),
+                mpApi('GET', 'meal_users'),
             ]);
 
             mpUsers      = (Array.isArray(users)     ? users     : []).map(u => ({...u, id: String(u.id)}));
@@ -993,7 +955,7 @@
 
         try {
             // Create the meal record
-            const mealResp = await mpApi('POST', 'objects/mp_meals', {
+            const mealResp = await mpApi('POST', 'meals', {
                 plan_date:   mpModalDate,
                 category_id: String(mpModalCatId),
                 recipe_name: name,
@@ -1002,7 +964,7 @@
 
             // Create participant records
             await Promise.all(participants.map(p =>
-                mpApi('POST', 'objects/mp_meal_users', {
+                mpApi('POST', 'meal_users', {
                     meal_id:  mealId,
                     user_id:  p.user_id,
                     servings: String(p.servings),
@@ -1027,8 +989,8 @@
         if (!confirm('Remove this meal?')) return;
         // Delete participants first
         const mus = mpMealUsers.filter(mu => mu.meal_id === mealId);
-        await Promise.all(mus.map(mu => mpApi('DELETE', `objects/mp_meal_users/${mu.id}`)));
-        await mpApi('DELETE', `objects/mp_meals/${mealId}`);
+        await Promise.all(mus.map(mu => mpApi('DELETE', `meal_users/${mu.id}`)));
+        await mpApi('DELETE', `meals/${mealId}`);
         await loadMpData();
     }
 
@@ -1136,7 +1098,7 @@
         if (errEl) { errEl.style.display = 'none'; errEl.textContent = ''; }
         if (btn)   { btn.disabled = true; btn.textContent = 'Saving…'; }
         try {
-            const resp = await fetch(url('/api/grocy-proxy/objects/mp_users'), {
+            const resp = await fetch(url('/api/mp/users'), {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
@@ -1154,7 +1116,7 @@
                 if (errEl) { errEl.textContent = msg; errEl.style.display = ''; }
                 return;
             }
-            const users = await mpApi('GET', 'objects/mp_users');
+            const users = await mpApi('GET', 'users');
             mpUsers = (Array.isArray(users) ? users : []).map(u => ({...u, id: String(u.id)}));
             renderMpUserManager();
         } catch (e) {
@@ -1166,7 +1128,7 @@
 
     async function deleteMpUser(uid) {
         if (!confirm('Remove this person from the meal planner?')) return;
-        await mpApi('DELETE', `objects/mp_users/${uid}`);
+        await mpApi('DELETE', `users/${uid}`);
         mpUsers = mpUsers.filter(u => u.id !== uid);
         renderMpUserManager();
     }
@@ -1366,7 +1328,7 @@
                 <td style="text-align:center"><span class="inv-current">${p.amount}</span></td>
                 <td class="inv-qty-cell" style="text-align:center">
                     <input type="number" class="inv-qty-input" id="inv-qty-${i}"
-                        placeholder="${p.amount}" min="0" step="0.001"
+                        placeholder="${p.amount}" min="0" step="1"
                         oninput="onInvQtyChange(${i})">
                 </td>
                 <td><input type="date" class="inv-bbe-input" id="inv-bbe-${i}" value="${p.best_before_date || ''}"></td>
@@ -1377,11 +1339,13 @@
 
     function onInvQtyChange(i) {
         const input = document.getElementById(`inv-qty-${i}`);
+        const tr    = document.getElementById(`inv-row-${i}`);
         const row   = invData[i];
         if (!row) return;
         const val = input.value.trim();
         const changed = val !== '' && parseFloat(val) !== row.amount;
         input.classList.toggle('changed', changed);
+        if (tr) tr.classList.toggle('inv-row-changed', changed);
         updateInvTiles();
     }
 
