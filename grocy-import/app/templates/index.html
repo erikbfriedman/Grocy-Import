@@ -358,6 +358,11 @@
         .mp-macro-val { font-size: 13px; }
         .mp-modal-foot { padding: 12px 20px; border-top: 1px solid var(--border); display: flex; gap: 8px; justify-content: flex-end; }
         .mp-save-lib-row { display: flex; align-items: center; gap: 6px; margin-top: 6px; font-size: 12px; color: var(--text-muted); cursor: pointer; user-select: none; }
+        .mp-recipe-wrap { position: relative; }
+        .mp-library-drop { position: absolute; left: 0; right: 0; top: 100%; background: var(--surface); border: 1px solid var(--border); border-top: none; border-radius: 0 0 6px 6px; max-height: 180px; overflow-y: auto; z-index: 1000; display: none; box-shadow: 0 4px 12px rgba(0,0,0,.15); }
+        .mp-library-drop.open { display: block; }
+        .mp-lib-option { padding: 8px 12px; cursor: pointer; font-size: 13px; color: var(--text); }
+        .mp-lib-option:hover { background: rgba(99,102,241,.08); }
 
         /* Manage panels (users, categories) */
         .mp-manage-modal { width: 420px; }
@@ -559,9 +564,11 @@
                 <div class="mp-modal-body">
                     <div>
                         <div class="mp-field-label">Recipe / Dish Name</div>
-                        <input type="text" id="mpRecipeName" placeholder="e.g. Chicken Alfredo"
-                               list="mpMealLibraryList" autocomplete="off">
-                        <datalist id="mpMealLibraryList"></datalist>
+                        <div class="mp-recipe-wrap">
+                            <input type="text" id="mpRecipeName" placeholder="e.g. Chicken Alfredo"
+                                   autocomplete="off" oninput="mpFilterLibrary()" onfocus="mpShowLibrary()" onblur="mpHideLibrary()">
+                            <div class="mp-library-drop" id="mpLibraryDrop"></div>
+                        </div>
                         <label class="mp-save-lib-row">
                             <input type="checkbox" id="mpSaveToLib">
                             <span>Save to meal library</span>
@@ -725,8 +732,9 @@
     let mpMealUsers   = [];     // participants for visible meals
     let mpMealLibrary = [];     // saved meal names
     let mpReady       = false;
-    let mpModalDate  = null;
-    let mpModalCatId = null;
+    let mpModalDate   = null;
+    let mpModalCatId  = null;
+    let mpEditMealId  = null;
 
     function mpApi(method, path, body) {
         const opts = { method, headers: { 'Content-Type': 'application/json' } };
@@ -852,7 +860,7 @@
                         const initials = (u.name || '?').charAt(0).toUpperCase();
                         return `<span class="mp-chip" style="background:${escHtml(u.color || '#555')}" title="${escHtml(u.name)}">${initials}</span>`;
                     }).join('');
-                    html += `<div class="mp-card">
+                    html += `<div class="mp-card" onclick="openMpEditModal(${m.id},event)">
                         <button class="mp-card-del" onclick="deleteMpMeal('${m.id}',event)" title="Remove">&#x2715;</button>
                         <div class="mp-card-name">${escHtml(m.recipe_name || '')}</div>
                         <div class="mp-card-chips">${chips}</div>
@@ -898,6 +906,7 @@
 
     // ── Add meal modal ────────────────────────────────────────────
     function openMpModal(dateStr, catId) {
+        mpEditMealId = null;
         mpModalDate  = dateStr;
         mpModalCatId = catId;
         const cat  = mpCategories.find(c => c.id === String(catId));
@@ -905,10 +914,10 @@
         const label = d.toLocaleDateString(undefined, {weekday:'short', month:'short', day:'numeric'});
         document.getElementById('mpModalTitle').textContent = `Add Meal — ${label} · ${cat ? cat.name : ''}`;
         document.getElementById('mpRecipeName').value = '';
-        const dl = document.getElementById('mpMealLibraryList');
-        if (dl) dl.innerHTML = mpMealLibrary.map(m => `<option value="${escHtml(m.name)}"></option>`).join('');
         const saveChk = document.getElementById('mpSaveToLib');
         if (saveChk) saveChk.checked = false;
+        const saveBtn = document.querySelector('.mp-modal-foot').querySelectorAll('button')[1];
+        if (saveBtn) saveBtn.textContent = 'Add Meal';
 
         const usersHtml = mpUsers.map(u => {
             const init  = (u.name || '?').charAt(0).toUpperCase();
@@ -947,6 +956,75 @@
         if (e.target === document.getElementById('mpModalBack')) closeMpModal();
     }
 
+    function openMpEditModal(mealId, e) {
+        e && e.stopPropagation();
+        const m = mpMeals.find(x => String(x.id) === String(mealId));
+        if (!m) return;
+        mpEditMealId = mealId;
+        mpModalDate  = m.plan_date;
+        mpModalCatId = m.category_id;
+        const cat   = mpCategories.find(c => String(c.id) === String(m.category_id));
+        const d     = new Date(m.plan_date + 'T00:00:00');
+        const label = d.toLocaleDateString(undefined, {weekday:'short', month:'short', day:'numeric'});
+        document.getElementById('mpModalTitle').textContent = `Edit Meal — ${label} · ${cat ? cat.name : ''}`;
+        document.getElementById('mpRecipeName').value = m.recipe_name || '';
+        const saveChk = document.getElementById('mpSaveToLib');
+        if (saveChk) saveChk.checked = false;
+        const saveBtn = document.querySelector('.mp-modal-foot').querySelectorAll('button')[1];
+        if (saveBtn) saveBtn.textContent = 'Save Changes';
+
+        const existingMUs = mpMealUsers.filter(mu => String(mu.meal_id) === String(mealId));
+        const usersHtml = mpUsers.map(u => {
+            const mu    = existingMUs.find(x => String(x.user_id) === String(u.id));
+            const init  = (u.name || '?').charAt(0).toUpperCase();
+            const color = u.color || '#555';
+            return `<div class="mp-user-row${mu ? ' selected' : ''}" id="mpUR-${u.id}">
+                <label class="mp-user-toggle">
+                    <input type="checkbox" id="mpUC-${u.id}" onchange="mpUserToggle('${u.id}')"${mu ? ' checked' : ''}>
+                    <div class="mp-chip" style="background:${escHtml(color)}">${init}</div>
+                    <span class="mp-user-toggle-name">${escHtml(u.name || '')}</span>
+                </label>
+                <div class="mp-user-detail">
+                    <div><div class="mp-macro-label">Servings</div><input type="number" id="mpSrv-${u.id}" value="${mu ? (mu.servings || 1) : 1}" min="0.1" step="0.1" style="width:80px"></div>
+                    <div><div class="mp-macro-label">Calories</div><input type="number" id="mpCal-${u.id}" value="${mu && mu.calories ? mu.calories : ''}" placeholder="kcal" style="width:80px"></div>
+                    <div><div class="mp-macro-label">Protein (g)</div><input type="number" id="mpPro-${u.id}" value="${mu && mu.protein ? mu.protein : ''}" placeholder="g" style="width:80px"></div>
+                    <div><div class="mp-macro-label">Carbs (g)</div><input type="number" id="mpCarb-${u.id}" value="${mu && mu.carbs ? mu.carbs : ''}" placeholder="g" style="width:80px"></div>
+                    <div><div class="mp-macro-label">Fat (g)</div><input type="number" id="mpFat-${u.id}" value="${mu && mu.fat ? mu.fat : ''}" placeholder="g" style="width:80px"></div>
+                </div>
+            </div>`;
+        }).join('');
+        document.getElementById('mpModalUsers').innerHTML = usersHtml || '<p style="color:var(--text-muted);font-size:13px">No users yet.</p>';
+        document.getElementById('mpModalBack').classList.add('open');
+        setTimeout(() => document.getElementById('mpRecipeName')?.focus(), 50);
+    }
+
+    // ── Meal library combo dropdown ───────────────────────────────
+    function mpShowLibrary() {
+        mpFilterLibrary();
+    }
+
+    function mpHideLibrary() {
+        setTimeout(() => document.getElementById('mpLibraryDrop')?.classList.remove('open'), 150);
+    }
+
+    function mpFilterLibrary() {
+        const q = (document.getElementById('mpRecipeName')?.value || '').toLowerCase();
+        const matches = q
+            ? mpMealLibrary.filter(m => m.name.toLowerCase().includes(q))
+            : mpMealLibrary;
+        const drop = document.getElementById('mpLibraryDrop');
+        if (!drop || !matches.length) { drop?.classList.remove('open'); return; }
+        drop.innerHTML = matches.map(m =>
+            `<div class="mp-lib-option" data-name="${escHtml(m.name)}" onmousedown="mpPickLibItem(this.dataset.name)">${escHtml(m.name)}</div>`
+        ).join('');
+        drop.classList.add('open');
+    }
+
+    function mpPickLibItem(name) {
+        document.getElementById('mpRecipeName').value = name;
+        document.getElementById('mpLibraryDrop')?.classList.remove('open');
+    }
+
     async function saveMpMeal() {
         const name = document.getElementById('mpRecipeName').value.trim();
         if (!name) { document.getElementById('mpRecipeName').focus(); return; }
@@ -964,18 +1042,31 @@
 
         const foot = document.querySelector('.mp-modal-foot');
         const saveBtn = foot.querySelectorAll('button')[1];
+        const isEdit = !!mpEditMealId;
         saveBtn.disabled = true; saveBtn.textContent = 'Saving…';
 
         try {
-            // Create the meal record
-            const mealResp = await mpApi('POST', 'meals', {
-                plan_date:   mpModalDate,
-                category_id: String(mpModalCatId),
-                recipe_name: name,
-            });
-            const mealId = String(mealResp.created_object_id || mealResp.id || '');
+            let mealId;
+            if (isEdit) {
+                await mpApi('PUT', `meals/${mpEditMealId}`, {
+                    plan_date:   mpModalDate,
+                    category_id: String(mpModalCatId),
+                    recipe_name: name,
+                });
+                // Delete existing participants (backend also removes Grocy meal_plan entries)
+                const existing = mpMealUsers.filter(mu => String(mu.meal_id) === String(mpEditMealId));
+                await Promise.all(existing.map(mu => mpApi('DELETE', `meal_users/${mu.id}`)));
+                mealId = String(mpEditMealId);
+            } else {
+                const mealResp = await mpApi('POST', 'meals', {
+                    plan_date:   mpModalDate,
+                    category_id: String(mpModalCatId),
+                    recipe_name: name,
+                });
+                mealId = String(mealResp.created_object_id || mealResp.id || '');
+            }
 
-            // Create participant records
+            // Create (or recreate) participant records
             await Promise.all(participants.map(p =>
                 mpApi('POST', 'meal_users', {
                     meal_id:  mealId,
@@ -994,7 +1085,7 @@
                 try { await mpApi('POST', 'meal_library', { name }); } catch(_) {}
             }
 
-            // Mirror to Grocy tasks (fire-and-forget)
+            // Sync to Grocy Meal Planner
             try { await fetch(url('/api/mp/sync/' + mealId), { method: 'POST' }); } catch(_) {}
 
             closeMpModal();
@@ -1002,7 +1093,8 @@
         } catch (e) {
             alert('Save failed: ' + e.message);
         } finally {
-            saveBtn.disabled = false; saveBtn.textContent = 'Add Meal';
+            saveBtn.disabled = false;
+            saveBtn.textContent = isEdit ? 'Save Changes' : 'Add Meal';
         }
     }
 
