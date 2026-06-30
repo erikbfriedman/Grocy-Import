@@ -372,6 +372,9 @@
         .mp-manage-name { flex: 1; font-size: 14px; font-weight: 500; }
         .mp-manage-del { background: none; border: none; color: var(--text-muted); cursor: pointer; font-size: 14px; padding: 2px 6px; }
         .mp-manage-del:hover { color: var(--danger); }
+        .mp-manage-edit { background: none; border: none; color: var(--text-muted); cursor: pointer; font-size: 13px; padding: 2px 6px; }
+        .mp-manage-edit:hover { color: var(--primary); }
+        .mp-edit-row { padding: 10px 0; border-bottom: 1px solid var(--border); display: flex; flex-direction: column; gap: 8px; }
         .mp-add-user-form { display: flex; flex-direction: column; gap: 8px; margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--border); }
         .mp-add-user-row { display: flex; gap: 8px; }
         .mp-color-swatches { display: flex; gap: 6px; flex-wrap: wrap; }
@@ -1126,11 +1129,14 @@
 
         const userList = mpUsers.map(u => {
             const init = (u.name || '?').charAt(0).toUpperCase();
-            return `<div class="mp-manage-item">
-                <div class="mp-manage-chip" style="background:${escHtml(u.color || '#555')}">${init}</div>
-                <div class="mp-manage-name">${escHtml(u.name || '')}</div>
-                <span style="font-size:11px;color:var(--text-muted)">${u.calorie_goal ? u.calorie_goal+' kcal' : ''}</span>
-                <button class="mp-manage-del" onclick="deleteMpUser('${u.id}')" title="Remove">&#x2715;</button>
+            return `<div id="mpManageItem-${u.id}">
+                <div class="mp-manage-item">
+                    <div class="mp-manage-chip" style="background:${escHtml(u.color || '#555')}">${init}</div>
+                    <div class="mp-manage-name">${escHtml(u.name || '')}</div>
+                    <span style="font-size:11px;color:var(--text-muted)">${u.calorie_goal ? u.calorie_goal+' kcal' : ''}</span>
+                    <button class="mp-manage-edit" onclick="mpEditUser('${u.id}')" title="Edit">&#x270E;</button>
+                    <button class="mp-manage-del" onclick="deleteMpUser('${u.id}')" title="Remove">&#x2715;</button>
+                </div>
             </div>`;
         }).join('') || '<p style="color:var(--text-muted);font-size:13px;margin:0">No users yet.</p>';
 
@@ -1241,6 +1247,65 @@
         if (!confirm('Remove this person from the meal planner?')) return;
         await mpApi('DELETE', `users/${uid}`);
         mpUsers = mpUsers.filter(u => u.id !== uid);
+        renderMpUserManager();
+    }
+
+    function mpEditUser(uid) {
+        const u = mpUsers.find(x => x.id === uid);
+        if (!u) return;
+        const swatches = MP_COLORS.map(c =>
+            `<div class="mp-color-swatch${c === (u.color || '#3b82f6') ? ' active' : ''}" style="background:${c}" onclick="mpEditSelectColor('${uid}','${c}')"></div>`
+        ).join('');
+        document.getElementById(`mpManageItem-${uid}`).innerHTML = `
+            <div class="mp-edit-row">
+                <div class="mp-add-user-row">
+                    <input type="text" id="mpEditName-${uid}" value="${escHtml(u.name || '')}" placeholder="Name" style="flex:1">
+                    <input type="number" id="mpEditCals-${uid}" value="${u.calorie_goal || ''}" placeholder="Calorie goal (kcal)" style="width:160px">
+                </div>
+                <div class="mp-add-user-row" style="gap:8px;align-items:flex-start">
+                    <div style="flex:1;display:flex;flex-direction:column;gap:3px">
+                        <div class="mp-macro-label">Protein (g)</div>
+                        <input type="number" id="mpEditPro-${uid}" value="${u.protein_goal || ''}" placeholder="g" style="width:100%">
+                    </div>
+                    <div style="flex:1;display:flex;flex-direction:column;gap:3px">
+                        <div class="mp-macro-label">Carbs (g)</div>
+                        <input type="number" id="mpEditCarb-${uid}" value="${u.carbs_goal || ''}" placeholder="g" style="width:100%">
+                    </div>
+                    <div style="flex:1;display:flex;flex-direction:column;gap:3px">
+                        <div class="mp-macro-label">Fat (g)</div>
+                        <input type="number" id="mpEditFat-${uid}" value="${u.fat_goal || ''}" placeholder="g" style="width:100%">
+                    </div>
+                </div>
+                <div class="mp-color-swatches">${swatches}</div>
+                <input type="hidden" id="mpEditColor-${uid}" value="${escHtml(u.color || '#3b82f6')}">
+                <div style="display:flex;gap:8px">
+                    <button class="btn btn-success" style="padding:4px 14px;font-size:13px" onclick="saveUserEdit('${uid}')">Save</button>
+                    <button class="btn" style="padding:4px 14px;font-size:13px" onclick="renderMpUserManager()">Cancel</button>
+                </div>
+            </div>`;
+        document.getElementById(`mpEditName-${uid}`)?.focus();
+    }
+
+    function mpEditSelectColor(uid, c) {
+        document.getElementById(`mpEditColor-${uid}`).value = c;
+        document.getElementById(`mpManageItem-${uid}`)?.querySelectorAll('.mp-color-swatch').forEach(el => {
+            el.classList.toggle('active', el.style.background === c);
+        });
+    }
+
+    async function saveUserEdit(uid) {
+        const name = document.getElementById(`mpEditName-${uid}`)?.value.trim();
+        if (!name) { document.getElementById(`mpEditName-${uid}`)?.focus(); return; }
+        await mpApi('PUT', `users/${uid}`, {
+            name,
+            color:        document.getElementById(`mpEditColor-${uid}`)?.value || MP_COLORS[0],
+            calorie_goal: document.getElementById(`mpEditCals-${uid}`)?.value || '0',
+            protein_goal: document.getElementById(`mpEditPro-${uid}`)?.value  || '0',
+            carbs_goal:   document.getElementById(`mpEditCarb-${uid}`)?.value || '0',
+            fat_goal:     document.getElementById(`mpEditFat-${uid}`)?.value  || '0',
+        });
+        const users = await mpApi('GET', 'users');
+        mpUsers = (Array.isArray(users) ? users : []).map(u => ({...u, id: String(u.id)}));
         renderMpUserManager();
     }
 
