@@ -889,25 +889,21 @@
                     const { category } = mpParseSectionName(p.section_name);
                     return category.toLowerCase() === row.name.toLowerCase();
                 });
-                // Group plans by recipe name → one card per unique recipe
-                const recipeMap = {};
-                cellPlans.forEach(p => {
-                    const key = p.recipe_name || 'Unknown';
-                    if (!recipeMap[key]) recipeMap[key] = [];
-                    recipeMap[key].push(p);
-                });
                 html += `<div class="mp-cell">`;
-                Object.entries(recipeMap).forEach(([recipeName, plans]) => {
-                    const planIds = JSON.stringify(plans.map(p => p.grocy_plan_id));
-                    const chips = plans.filter(p => p.local_user_id).map(p => {
-                        const u = mpUsers.find(u => u.id === p.local_user_id);
-                        if (!u) return '';
-                        return `<span class="mp-chip" style="background:${escHtml(u.color || '#555')}" title="${escHtml(u.name)}">${(u.name||'?').charAt(0).toUpperCase()}</span>`;
-                    }).join('');
-                    html += `<div class="mp-card" onclick="openMpEditByPlanIds(${planIds},event)">
-                        <button class="mp-card-del" onclick="deleteMpGrocyCard(${planIds},event)" title="Remove">&#x2715;</button>
-                        <div class="mp-card-name">${escHtml(recipeName)}</div>
-                        <div class="mp-card-chips">${chips}</div>
+                // One card per Grocy plan entry — no merging by recipe name avoids
+                // hiding entries and sidesteps double-quote injection in onclick attrs
+                cellPlans.forEach(p => {
+                    const { user: sectionUser } = mpParseSectionName(p.section_name);
+                    const localUser = p.local_user_id ? mpUsers.find(u => u.id === p.local_user_id) : null;
+                    const chipUser  = localUser || sectionUser;
+                    const chip = chipUser
+                        ? `<span class="mp-chip" style="background:${escHtml(chipUser.color || '#555')}" title="${escHtml(chipUser.name)}">${(chipUser.name||'?').charAt(0).toUpperCase()}</span>`
+                        : '';
+                    const planIdsAttr = escHtml(JSON.stringify([p.grocy_plan_id]));
+                    html += `<div class="mp-card" data-planids='${planIdsAttr}' onclick="openMpEditByPlanIds(JSON.parse(this.dataset.planids),event)">
+                        <button class="mp-card-del" onclick="deleteMpGrocyCard(JSON.parse(this.parentElement.dataset.planids),event)" title="Remove">&#x2715;</button>
+                        <div class="mp-card-name">${escHtml(p.recipe_name || '')}</div>
+                        <div class="mp-card-chips">${chip}</div>
                     </div>`;
                 });
                 if (row.isLocal) {
