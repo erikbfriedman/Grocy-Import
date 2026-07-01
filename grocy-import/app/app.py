@@ -4,7 +4,7 @@ import json
 import os
 import re
 import sqlite3
-from datetime import datetime
+from datetime import datetime, timedelta
 
 import requests
 from flask import Flask, render_template, request, jsonify
@@ -1006,6 +1006,158 @@ def mp_recipe_nutrition(recipe_id):
         return jsonify(result)
     except Exception as e:
         return jsonify({'ok': False, 'error': str(e)})
+
+
+@app.route('/api/mp/grocy-week')
+def mp_grocy_week():
+    """Return Grocy meal_plan entries for a week, enriched with local user/nutrition."""
+    if not (GROCY_URL and GROCY_API_KEY):
+        return jsonify({'ok': False, 'plans': [], 'sections': [], 'reason': 'Grocy not configured'})
+    start = request.args.get('start', '')
+    if not start:
+        return jsonify({'error': 'start required'}), 400
+    try:
+        end = (datetime.strptime(start, '%Y-%m-%d') + timedelta(days=6)).strftime('%Y-%m-%d')
+    except ValueError:
+        return jsonify({'error': 'invalid date'}), 400
+    try:
+        r = requests.get(f'{GROCY_URL}/api/objects/meal_plan',
+                         headers=grocy_headers(),
+                         params={'query[]': [f'day>={start}', f'day<={end}']}, timeout=10)
+        plans = r.json() if r.ok else []
+
+        r2 = requests.get(f'{GROCY_URL}/api/objects/meal_plan_sections', headers=grocy_headers(), timeout=10)
+        sections_list = r2.json() if r2.ok else []
+        section_map = {str(s['id']): s.get('name', '') for s in (sections_list or []) if s.get('id')}
+
+        r3 = requests.get(f'{GROCY_URL}/api/objects/recipes', headers=grocy_headers(), timeout=10)
+        recipe_map = {str(rc['id']): rc.get('name', '') for rc in (r3.json() if r3.ok else []) if rc.get('id')}
+
+        with _mp_db() as con:
+            local_mus = [dict(row) for row in con.execute(
+                'SELECT * FROM mp_meal_users WHERE grocy_meal_plan_id IS NOT NULL'
+            ).fetchall()]
+        nutrition_map = {str(mu['grocy_meal_plan_id']): mu for mu in local_mus}
+
+        enriched = []
+        for p in (plans or []):
+            pid = str(p.get('id', ''))
+            rid = str(p.get('recipe_id') or '')
+            sid = str(p.get('section_id') or '')
+            loc = nutrition_map.get(pid, {})
+            enriched.append({
+                'grocy_plan_id': pid,
+                'day':           p.get('day', ''),
+                'recipe_id':     rid,
+                'recipe_name':   recipe_map.get(rid) or p.get('note') or '',
+                'section_id':    sid,
+                'section_name':  section_map.get(sid, ''),
+                'recipe_servings': float(p.get('recipe_servings') or 1),
+                'local_user_id': str(loc['user_id']) if loc.get('user_id') else None,
+                'servings':      float(loc['servings'] or 1)  if loc else None,
+                'calories':      float(loc['calories'] or 0)  if loc else None,
+                'protein':       float(loc['protein']  or 0)  if loc else None,
+                'carbs':         float(loc['carbs']    or 0)  if loc else None,
+                'fat':           float(loc['fat']      or 0)  if loc else None,
+            })
+
+        return jsonify({
+            'ok': True,
+            'plans': enriched,
+            'sections': [{'id': str(s['id']), 'name': s.get('name', '')} for s in (sections_list or [])],
+        })
+    except Exception as e:
+        return jsonify({'ok': False, 'error': str(e), 'plans': [], 'sections': []})
+
+
+@app.route('/api/mp/grocy-meal', methods=['POST'])
+def mp_grocy_meal_create():
+    """Write a meal directly to Grocy's meal_plan; store per-user nutrition locally."""
+    if not (GROCY_URL and GROCY_API_KEY):
+        return jsonify({'ok': False, 'reason': 'Grocy not configured'})
+    body         = request.get_json(silent=True) or {}
+    plan_date    = body.get('plan_date', '')
+    cat_name     = body.get('category_name', 'Meal')
+    recipe_name  = body.get('recipe_name', '')
+    participants = body.get('participants', [])
+    if not (plan_date and recipe_name):
+        return jsonify({'ok': False, 'reason': 'plan_date and recipe_name required'}), 400
+
+    # Find or create the Grocy recipe
+    recipe_id = None
+    try:
+        r = requests.get(f'{GROCY_URL}/api/objects/recipes', headers=grocy_headers(), timeout=10)
+        for rec in (r.json() if r.ok else []):
+            if rec.get('name') == recipe_name:
+                recipe_id = int(rec['id']); break
+        if recipe_id is None:
+            r = requests.post(f'{GROCY_URL}/api/objects/recipes', headers=grocy_headers(),
+                              json={'name': recipe_name, 'type': 'normal'}, timeout=10)
+            if r.ok:
+                recipe_id = int(r.json().get('created_object_id', 0)) or None
+    except Exception as e:
+        return jsonify({'ok': False, 'reason': f'recipe: {e}'})
+
+    # Load existing sections
+    try:
+        r = requests.get(f'{GROCY_URL}/api/objects/meal_plan_sections', headers=grocy_headers(), timeout=10)
+        grocy_sections = {s['name']: int(s['id']) for s in (r.json() if r.ok else []) if s.get('name')}
+    except Exception:
+        grocy_sections = {}
+
+    created_plan_ids, errors = [], []
+    targets = participants if participants else [{'user_id': None, 'user_name': '', 'servings': 1}]
+
+    for p in targets:
+        user_name    = p.get('user_name', '')
+        section_name = f"{cat_name}-{user_name}" if user_name else cat_name
+        if section_name not in grocy_sections:
+            try:
+                r = requests.post(f'{GROCY_URL}/api/objects/meal_plan_sections', headers=grocy_headers(),
+                                  json={'name': section_name}, timeout=10)
+                if r.ok:
+                    grocy_sections[section_name] = int(r.json().get('created_object_id', 0))
+                else:
+                    errors.append(f'section {r.status_code}'); continue
+            except Exception as e:
+                errors.append(str(e)); continue
+        section_id = grocy_sections[section_name]
+        try:
+            r = requests.post(f'{GROCY_URL}/api/objects/meal_plan', headers=grocy_headers(),
+                              json={'day': plan_date, 'recipe_id': recipe_id,
+                                    'recipe_servings': float(p.get('servings') or 1),
+                                    'section_id': section_id}, timeout=10)
+            if r.ok:
+                plan_id = r.json().get('created_object_id')
+                created_plan_ids.append(plan_id)
+                if p.get('user_id'):
+                    with _mp_db() as con:
+                        con.execute(
+                            'INSERT INTO mp_meal_users '
+                            '(meal_id, user_id, grocy_meal_plan_id, servings, calories, protein, carbs, fat, row_created_timestamp) '
+                            'VALUES (NULL,?,?,?,?,?,?,?,?)',
+                            [p['user_id'], plan_id,
+                             float(p.get('servings') or 1), float(p.get('calories') or 0),
+                             float(p.get('protein')  or 0), float(p.get('carbs')    or 0),
+                             float(p.get('fat')      or 0),
+                             datetime.utcnow().isoformat(' ', 'seconds')]
+                        )
+            else:
+                errors.append(f'meal_plan {r.status_code}')
+        except Exception as e:
+            errors.append(str(e))
+
+    return jsonify({'ok': not errors, 'plan_ids': created_plan_ids, 'errors': errors})
+
+
+@app.route('/api/mp/grocy-plan/<int:grocy_plan_id>', methods=['DELETE'])
+def mp_grocy_plan_delete(grocy_plan_id):
+    """Delete a Grocy meal_plan entry and its local nutrition record."""
+    if GROCY_URL and GROCY_API_KEY:
+        _delete_grocy_meal_plan_entry(grocy_plan_id)
+    with _mp_db() as con:
+        con.execute('DELETE FROM mp_meal_users WHERE grocy_meal_plan_id = ?', [grocy_plan_id])
+    return jsonify({'ok': True})
 
 
 if __name__ == '__main__':

@@ -732,16 +732,17 @@
     //  MEAL PLANNER
     // ══════════════════════════════════════════════════════════════
     const MP_COLORS = ['#3b82f6','#10b981','#f59e0b','#ef4444','#8b5cf6','#ec4899','#06b6d4','#84cc16'];
-    let mpWeekStart   = null;   // Monday Date of current week
+    let mpWeekStart   = null;
     let mpUsers       = [];
     let mpCategories  = [];
-    let mpMeals       = [];     // entries for the visible week
-    let mpMealUsers   = [];     // participants for visible meals
-    let mpMealLibrary = [];     // saved meal names
+    let mpGrocyPlans  = [];     // meal_plan entries from Grocy for the visible week
+    let mpMealLibrary = [];     // recipe names from Grocy
     let mpReady       = false;
     let mpModalDate        = null;
     let mpModalCatId       = null;
+    let mpModalCatName     = '';
     let mpEditMealId       = null;
+    let mpEditPlanIds      = [];
     let mpSelectedMealName = null;
 
     function mpApi(method, path, body) {
@@ -781,17 +782,15 @@
         document.getElementById('mpStatus').textContent = 'Loading…';
         document.getElementById('mpStatus').className = 'status-pill loading';
         try {
-            const weekEnd = new Date(mpWeekStart);
-            weekEnd.setDate(weekEnd.getDate() + 6);
+            const wStart = mpFmtDate(mpWeekStart);
 
-            const [users, cats, allMeals, allMealUsers] = await Promise.all([
+            const [users, cats, weekData] = await Promise.all([
                 mpApi('GET', 'users'),
                 mpApi('GET', 'categories'),
-                mpApi('GET', 'meals'),
-                mpApi('GET', 'meal_users'),
+                fetch(url('/api/mp/grocy-week?start=' + wStart)).then(r => r.json()).catch(() => ({ok: false, plans: []})),
             ]);
 
-            // Grocy recipes are the exclusive source for the meal picker
+            // Grocy recipes for the meal picker
             mpMealLibrary = [];
             try {
                 const gr = await fetch(url('/api/grocy-proxy/objects/recipes'));
@@ -799,33 +798,26 @@
                     const recipes = await gr.json();
                     if (Array.isArray(recipes)) {
                         mpMealLibrary = recipes
-                            .filter(r => r.name && r.id > 0)  // exclude internal mealplan-* entries (negative IDs)
+                            .filter(r => r.name && r.id > 0)
                             .map(r => ({name: r.name, grocy_id: String(r.id)}))
                             .sort((a, b) => a.name.localeCompare(b.name));
                     }
                 }
             } catch(_) {}
 
-            mpUsers      = (Array.isArray(users)     ? users     : []).map(u => ({...u, id: String(u.id)}));
-            mpCategories = (Array.isArray(cats)      ? cats      : [])
+            mpUsers      = (Array.isArray(users) ? users : []).map(u => ({...u, id: String(u.id)}));
+            mpCategories = (Array.isArray(cats) ? cats : [])
                             .map(c => ({...c, id: String(c.id), sort_order: parseInt(c.sort_order) || 0}))
                             .sort((a, b) => a.sort_order - b.sort_order);
-
-            // Filter meals to the visible week
-            const wStart = mpFmtDate(mpWeekStart);
-            const wEnd   = mpFmtDate(weekEnd);
-            mpMeals = (Array.isArray(allMeals) ? allMeals : [])
-                        .filter(m => m.plan_date >= wStart && m.plan_date <= wEnd)
-                        .map(m => ({...m, id: String(m.id)}));
-
-            const mealIds = new Set(mpMeals.map(m => m.id));
-            mpMealUsers = (Array.isArray(allMealUsers) ? allMealUsers : [])
-                           .filter(mu => mealIds.has(String(mu.meal_id)))
-                           .map(mu => ({...mu, id: String(mu.id), meal_id: String(mu.meal_id), user_id: String(mu.user_id)}));
+            mpGrocyPlans = (weekData?.plans || []).map(p => ({
+                ...p,
+                grocy_plan_id: String(p.grocy_plan_id),
+                local_user_id: p.local_user_id ? String(p.local_user_id) : null,
+            }));
 
             renderMpGrid();
             renderMpNutrition();
-            document.getElementById('mpStatus').textContent = `${mpMeals.length} meals`;
+            document.getElementById('mpStatus').textContent = `${mpGrocyPlans.length} meals`;
             document.getElementById('mpStatus').className = 'status-pill ok';
         } catch (e) {
             document.getElementById('mpStatus').textContent = 'Error: ' + e.message;
@@ -845,6 +837,16 @@
     function mpNextWeek() { mpWeekStart.setDate(mpWeekStart.getDate() + 7); updateMpWeekLabel(); loadMpData(); }
     function mpGoToday()  { mpWeekStart = mpMonday(new Date()); updateMpWeekLabel(); loadMpData(); }
 
+    function mpParseSectionName(sectionName) {
+        for (const u of mpUsers) {
+            const suffix = '-' + u.name;
+            if (sectionName.endsWith(suffix) && sectionName.length > suffix.length) {
+                return { category: sectionName.slice(0, -suffix.length), user: u };
+            }
+        }
+        return { category: sectionName, user: null };
+    }
+
     function renderMpGrid() {
         const grid = document.getElementById('mpGrid');
         const todayStr = mpFmtDate(new Date());
@@ -855,8 +857,20 @@
             return d;
         });
 
+        // Rows: local categories (ordered) + any Grocy sections not matching a local category
+        const localCatNames = new Set(mpCategories.map(c => c.name.toLowerCase()));
+        const extraCatNames = new Set();
+        mpGrocyPlans.forEach(p => {
+            if (!p.section_name) return;
+            const { category } = mpParseSectionName(p.section_name);
+            if (!localCatNames.has(category.toLowerCase())) extraCatNames.add(category);
+        });
+        const allRows = [
+            ...mpCategories.map(c => ({id: c.id, name: c.name, isLocal: true})),
+            ...[...extraCatNames].sort().map(n => ({id: null, name: n, isLocal: false})),
+        ];
+
         let html = '';
-        // Header row
         html += `<div class="mp-grid-head mp-grid-head-cat"></div>`;
         days.forEach((d, i) => {
             const isToday = mpFmtDate(d) === todayStr;
@@ -866,50 +880,58 @@
             </div>`;
         });
 
-        // Category rows
-        mpCategories.forEach(cat => {
-            html += `<div class="mp-cat-label">${escHtml(cat.name)}</div>`;
+        allRows.forEach(row => {
+            html += `<div class="mp-cat-label">${escHtml(row.name)}</div>`;
             days.forEach(d => {
                 const dateStr = mpFmtDate(d);
-                const cellMeals = mpMeals.filter(m => m.plan_date === dateStr && String(m.category_id) === cat.id);
+                const cellPlans = mpGrocyPlans.filter(p => {
+                    if (p.day !== dateStr || !p.section_name) return false;
+                    const { category } = mpParseSectionName(p.section_name);
+                    return category.toLowerCase() === row.name.toLowerCase();
+                });
+                // Group plans by recipe name → one card per unique recipe
+                const recipeMap = {};
+                cellPlans.forEach(p => {
+                    const key = p.recipe_name || 'Unknown';
+                    if (!recipeMap[key]) recipeMap[key] = [];
+                    recipeMap[key].push(p);
+                });
                 html += `<div class="mp-cell">`;
-                cellMeals.forEach(m => {
-                    const participants = mpMealUsers.filter(mu => mu.meal_id === m.id);
-                    const chips = participants.map(mu => {
-                        const u = mpUsers.find(u => u.id === mu.user_id);
+                Object.entries(recipeMap).forEach(([recipeName, plans]) => {
+                    const planIds = JSON.stringify(plans.map(p => p.grocy_plan_id));
+                    const chips = plans.filter(p => p.local_user_id).map(p => {
+                        const u = mpUsers.find(u => u.id === p.local_user_id);
                         if (!u) return '';
-                        const initials = (u.name || '?').charAt(0).toUpperCase();
-                        return `<span class="mp-chip" style="background:${escHtml(u.color || '#555')}" title="${escHtml(u.name)}">${initials}</span>`;
+                        return `<span class="mp-chip" style="background:${escHtml(u.color || '#555')}" title="${escHtml(u.name)}">${(u.name||'?').charAt(0).toUpperCase()}</span>`;
                     }).join('');
-                    html += `<div class="mp-card" onclick="openMpEditModal(${m.id},event)">
-                        <button class="mp-card-del" onclick="deleteMpMeal('${m.id}',event)" title="Remove">&#x2715;</button>
-                        <div class="mp-card-name">${escHtml(m.recipe_name || '')}</div>
+                    html += `<div class="mp-card" onclick="openMpEditByPlanIds(${planIds},event)">
+                        <button class="mp-card-del" onclick="deleteMpGrocyCard(${planIds},event)" title="Remove">&#x2715;</button>
+                        <div class="mp-card-name">${escHtml(recipeName)}</div>
                         <div class="mp-card-chips">${chips}</div>
                     </div>`;
                 });
-                html += `<button class="mp-add-cell-btn" onclick="openMpModal('${dateStr}','${cat.id}')">+</button>`;
+                if (row.isLocal) {
+                    html += `<button class="mp-add-cell-btn" onclick="openMpModal('${dateStr}','${row.id}')">+</button>`;
+                }
                 html += `</div>`;
             });
         });
 
-        // If no categories yet, prompt
-        if (!mpCategories.length) {
+        if (!allRows.length) {
             html += `<div style="grid-column:1/-1;padding:24px;text-align:center;color:var(--text-muted)">No meal categories found.</div>`;
         }
-
         grid.innerHTML = html;
     }
 
     function renderMpNutrition() {
         const strip = document.getElementById('mpNutritionStrip');
         if (!mpUsers.length) { strip.innerHTML = ''; return; }
-        const todayStr = mpFmtDate(new Date());
-        const todayMeals = mpMeals.filter(m => m.plan_date === todayStr).map(m => m.id);
-        const todayMUs   = mpMealUsers.filter(mu => todayMeals.includes(mu.meal_id));
+        const todayStr   = mpFmtDate(new Date());
+        const todayPlans = mpGrocyPlans.filter(p => p.day === todayStr && p.local_user_id);
 
         strip.innerHTML = mpUsers.map(u => {
-            const mus   = todayMUs.filter(mu => mu.user_id === u.id);
-            const cals  = mus.reduce((s, mu) => s + (parseFloat(mu.calories) || 0), 0);
+            const plans = todayPlans.filter(p => p.local_user_id === u.id);
+            const cals  = plans.reduce((s, p) => s + (parseFloat(p.calories) || 0), 0);
             const goal  = parseFloat(u.calorie_goal) || 0;
             const pct   = goal ? Math.min(100, Math.round(cals / goal * 100)) : 0;
             const init  = (u.name || '?').charAt(0).toUpperCase();
@@ -927,13 +949,15 @@
 
     // ── Add meal modal ────────────────────────────────────────────
     function openMpModal(dateStr, catId) {
-        mpEditMealId = null;
-        mpModalDate  = dateStr;
-        mpModalCatId = catId;
+        mpEditMealId  = null;
+        mpEditPlanIds = [];
+        mpModalDate   = dateStr;
+        mpModalCatId  = catId;
         const cat  = mpCategories.find(c => c.id === String(catId));
+        mpModalCatName = cat ? cat.name : '';
         const d    = new Date(dateStr + 'T00:00:00');
         const label = d.toLocaleDateString(undefined, {weekday:'short', month:'short', day:'numeric'});
-        document.getElementById('mpModalTitle').textContent = `Add Meal — ${label} · ${cat ? cat.name : ''}`;
+        document.getElementById('mpModalTitle').textContent = `Add Meal — ${label} · ${mpModalCatName}`;
         mpSelectedMealName = null;
         document.getElementById('mpLibFilter').value = '';
         document.getElementById('mpNewMealName').value = '';
@@ -964,7 +988,6 @@
 
         document.getElementById('mpModalUsers').innerHTML = usersHtml || '<p style="color:var(--text-muted);font-size:13px">No users yet — add users via Manage Users.</p>';
         document.getElementById('mpModalBack').classList.add('open');
-        setTimeout(() => document.getElementById('mpRecipeName')?.focus(), 50);
     }
 
     function mpUserToggle(uid) {
@@ -980,45 +1003,51 @@
         if (e.target === document.getElementById('mpModalBack')) closeMpModal();
     }
 
-    function openMpEditModal(mealId, e) {
-        e && e.stopPropagation();
-        const m = mpMeals.find(x => String(x.id) === String(mealId));
-        if (!m) return;
-        mpEditMealId = mealId;
-        mpModalDate  = m.plan_date;
-        mpModalCatId = m.category_id;
-        const cat   = mpCategories.find(c => String(c.id) === String(m.category_id));
-        const d     = new Date(m.plan_date + 'T00:00:00');
+    function openMpEditByPlanIds(planIds, e) {
+        e?.stopPropagation();
+        const plans = planIds.map(id => mpGrocyPlans.find(p => p.grocy_plan_id === String(id))).filter(Boolean);
+        if (!plans.length) return;
+
+        const firstPlan = plans[0];
+        const { category } = mpParseSectionName(firstPlan.section_name || '');
+
+        mpEditMealId   = null;
+        mpEditPlanIds  = planIds.map(String);
+        mpModalDate    = firstPlan.day;
+        mpModalCatName = category;
+        mpModalCatId   = (mpCategories.find(c => c.name.toLowerCase() === category.toLowerCase()) || {}).id || null;
+
+        const recipeName = firstPlan.recipe_name || '';
+        const inLib = mpMealLibrary.some(x => x.name === recipeName);
+        mpSelectedMealName = inLib ? recipeName : null;
+
+        const d = new Date(firstPlan.day + 'T00:00:00');
         const label = d.toLocaleDateString(undefined, {weekday:'short', month:'short', day:'numeric'});
-        document.getElementById('mpModalTitle').textContent = `Edit Meal — ${label} · ${cat ? cat.name : ''}`;
-        // If the meal name is in the library, pre-select it; otherwise show it in new-meal mode
-        const inLib = mpMealLibrary.some(x => x.name === m.recipe_name);
-        mpSelectedMealName = m.recipe_name || null;
+        document.getElementById('mpModalTitle').textContent = `Edit Meal — ${label} · ${category}`;
         document.getElementById('mpLibFilter').value = '';
         document.getElementById('mpNewMealInput').style.display = inLib ? 'none' : 'flex';
-        document.getElementById('mpNewMealBtn').style.display = inLib ? '' : 'none';
-        document.getElementById('mpNewMealName').value = inLib ? '' : (m.recipe_name || '');
+        document.getElementById('mpNewMealBtn').style.display   = inLib ? '' : 'none';
+        document.getElementById('mpNewMealName').value = inLib ? '' : recipeName;
         const saveBtn = document.querySelector('.mp-modal-foot').querySelectorAll('button')[1];
         if (saveBtn) saveBtn.textContent = 'Save Changes';
         mpRenderLibList();
 
-        const existingMUs = mpMealUsers.filter(mu => String(mu.meal_id) === String(mealId));
         const usersHtml = mpUsers.map(u => {
-            const mu    = existingMUs.find(x => String(x.user_id) === String(u.id));
+            const match = plans.find(p => p.local_user_id === u.id);
             const init  = (u.name || '?').charAt(0).toUpperCase();
             const color = u.color || '#555';
-            return `<div class="mp-user-row${mu ? ' selected' : ''}" id="mpUR-${u.id}">
+            return `<div class="mp-user-row${match ? ' selected' : ''}" id="mpUR-${u.id}">
                 <label class="mp-user-toggle">
-                    <input type="checkbox" id="mpUC-${u.id}" onchange="mpUserToggle('${u.id}')"${mu ? ' checked' : ''}>
+                    <input type="checkbox" id="mpUC-${u.id}" onchange="mpUserToggle('${u.id}')"${match ? ' checked' : ''}>
                     <div class="mp-chip" style="background:${escHtml(color)}">${init}</div>
                     <span class="mp-user-toggle-name">${escHtml(u.name || '')}</span>
                 </label>
                 <div class="mp-user-detail">
-                    <div><div class="mp-macro-label">Servings</div><input type="number" id="mpSrv-${u.id}" value="${mu ? (mu.servings || 1) : 1}" min="0.1" step="0.1" style="width:80px"></div>
-                    <div><div class="mp-macro-label">Calories</div><input type="number" id="mpCal-${u.id}" value="${mu && mu.calories ? mu.calories : ''}" placeholder="kcal" style="width:80px"></div>
-                    <div><div class="mp-macro-label">Protein (g)</div><input type="number" id="mpPro-${u.id}" value="${mu && mu.protein ? mu.protein : ''}" placeholder="g" style="width:80px"></div>
-                    <div><div class="mp-macro-label">Carbs (g)</div><input type="number" id="mpCarb-${u.id}" value="${mu && mu.carbs ? mu.carbs : ''}" placeholder="g" style="width:80px"></div>
-                    <div><div class="mp-macro-label">Fat (g)</div><input type="number" id="mpFat-${u.id}" value="${mu && mu.fat ? mu.fat : ''}" placeholder="g" style="width:80px"></div>
+                    <div><div class="mp-macro-label">Servings</div><input type="number" id="mpSrv-${u.id}" value="${match ? (match.servings || 1) : 1}" min="0.1" step="0.1" style="width:80px"></div>
+                    <div><div class="mp-macro-label">Calories</div><input type="number" id="mpCal-${u.id}" value="${match?.calories || ''}" placeholder="kcal" style="width:80px"></div>
+                    <div><div class="mp-macro-label">Protein (g)</div><input type="number" id="mpPro-${u.id}" value="${match?.protein || ''}" placeholder="g" style="width:80px"></div>
+                    <div><div class="mp-macro-label">Carbs (g)</div><input type="number" id="mpCarb-${u.id}" value="${match?.carbs || ''}" placeholder="g" style="width:80px"></div>
+                    <div><div class="mp-macro-label">Fat (g)</div><input type="number" id="mpFat-${u.id}" value="${match?.fat || ''}" placeholder="g" style="width:80px"></div>
                 </div>
             </div>`;
         }).join('');
@@ -1098,66 +1127,52 @@
         const participants = mpUsers
             .filter(u => document.getElementById(`mpUC-${u.id}`)?.checked)
             .map(u => ({
-                user_id:  u.id,
-                servings: parseFloat(document.getElementById(`mpSrv-${u.id}`)?.value) || 1,
-                calories: parseFloat(document.getElementById(`mpCal-${u.id}`)?.value) || 0,
-                protein:  parseFloat(document.getElementById(`mpPro-${u.id}`)?.value) || 0,
-                carbs:    parseFloat(document.getElementById(`mpCarb-${u.id}`)?.value) || 0,
-                fat:      parseFloat(document.getElementById(`mpFat-${u.id}`)?.value) || 0,
+                user_id:   u.id,
+                user_name: u.name,
+                servings:  parseFloat(document.getElementById(`mpSrv-${u.id}`)?.value) || 1,
+                calories:  parseFloat(document.getElementById(`mpCal-${u.id}`)?.value) || 0,
+                protein:   parseFloat(document.getElementById(`mpPro-${u.id}`)?.value) || 0,
+                carbs:     parseFloat(document.getElementById(`mpCarb-${u.id}`)?.value) || 0,
+                fat:       parseFloat(document.getElementById(`mpFat-${u.id}`)?.value) || 0,
             }));
 
         const foot = document.querySelector('.mp-modal-foot');
         const saveBtn = foot.querySelectorAll('button')[1];
-        const isEdit = !!mpEditMealId;
+        const isEdit = mpEditPlanIds.length > 0;
         saveBtn.disabled = true; saveBtn.textContent = 'Saving…';
 
         try {
-            let mealId;
+            // Delete old Grocy plan entries when editing
             if (isEdit) {
-                await mpApi('PUT', `meals/${mpEditMealId}`, {
-                    plan_date:   mpModalDate,
-                    category_id: String(mpModalCatId),
-                    recipe_name: name,
-                });
-                // Delete existing participants (backend also removes Grocy meal_plan entries)
-                const existing = mpMealUsers.filter(mu => String(mu.meal_id) === String(mpEditMealId));
-                await Promise.all(existing.map(mu => mpApi('DELETE', `meal_users/${mu.id}`)));
-                mealId = String(mpEditMealId);
-            } else {
-                const mealResp = await mpApi('POST', 'meals', {
-                    plan_date:   mpModalDate,
-                    category_id: String(mpModalCatId),
-                    recipe_name: name,
-                });
-                mealId = String(mealResp.created_object_id || mealResp.id || '');
+                await Promise.all(mpEditPlanIds.map(pid =>
+                    fetch(url('/api/mp/grocy-plan/' + pid), {method: 'DELETE'})
+                ));
             }
 
-            // Create (or recreate) participant records
-            await Promise.all(participants.map(p =>
-                mpApi('POST', 'meal_users', {
-                    meal_id:  mealId,
-                    user_id:  p.user_id,
-                    servings: String(p.servings),
-                    calories: String(p.calories),
-                    protein:  String(p.protein),
-                    carbs:    String(p.carbs),
-                    fat:      String(p.fat),
-                })
-            ));
-
-            // New meals are saved as Grocy recipes so they appear in future pickers
+            // If it's a new recipe not yet in Grocy, create it first
             if (newMealVisible && !mpMealLibrary.some(m => m.name === name)) {
                 try {
                     await fetch(url('/api/grocy-proxy/objects/recipes'), {
                         method: 'POST',
                         headers: {'Content-Type': 'application/json'},
-                        body: JSON.stringify({name}),
+                        body: JSON.stringify({name, type: 'normal'}),
                     });
                 } catch(_) {}
             }
 
-            // Sync to Grocy Meal Planner
-            try { await fetch(url('/api/mp/sync/' + mealId), { method: 'POST' }); } catch(_) {}
+            // Write directly to Grocy meal_plan
+            const resp = await fetch(url('/api/mp/grocy-meal'), {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({
+                    plan_date:     mpModalDate,
+                    category_name: mpModalCatName,
+                    recipe_name:   name,
+                    participants,
+                }),
+            });
+            const result = await resp.json();
+            if (!result.ok && result.errors?.length) throw new Error(result.errors.join('; '));
 
             closeMpModal();
             await loadMpData();
@@ -1169,10 +1184,12 @@
         }
     }
 
-    async function deleteMpMeal(mealId, e) {
+    async function deleteMpGrocyCard(planIds, e) {
         e.stopPropagation();
         if (!confirm('Remove this meal?')) return;
-        await mpApi('DELETE', `meals/${mealId}`);
+        await Promise.all(planIds.map(pid =>
+            fetch(url('/api/mp/grocy-plan/' + pid), {method: 'DELETE'})
+        ));
         await loadMpData();
     }
 
