@@ -304,20 +304,28 @@
         .mp-setup-banner p { color: var(--text-muted); font-size: 13px; margin: 0 0 16px; }
 
         /* Nutrition summary strip */
-        .mp-nutrition-strip { display: flex; gap: 12px; padding: 8px 20px; border-bottom: 1px solid var(--border); flex-wrap: wrap; overflow: hidden; min-height: 46px; }
-        .mp-nut-chip { display: flex; align-items: center; gap: 8px; background: var(--surface); border: 1px solid var(--border); border-radius: 20px; padding: 4px 12px 4px 6px; font-size: 12px; }
-        .mp-nut-avatar { width: 24px; height: 24px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 10px; font-weight: 700; color: #fff; flex-shrink: 0; }
+        .mp-nutrition-strip { display: flex; align-items: center; gap: 12px; padding: 8px 20px; border-bottom: 1px solid var(--border); flex-wrap: wrap; overflow: hidden; min-height: 46px; }
+        .mp-nut-chip { display: flex; align-items: flex-start; gap: 8px; background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 5px 12px 5px 6px; font-size: 12px; }
+        .mp-nut-avatar { width: 24px; height: 24px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 10px; font-weight: 700; color: #fff; flex-shrink: 0; margin-top: 2px; }
+        .mp-nut-info { display: flex; flex-direction: column; gap: 3px; }
+        .mp-nut-top { display: flex; align-items: center; gap: 8px; }
         .mp-nut-name { font-weight: 600; color: var(--text); }
         .mp-nut-bar-wrap { width: 70px; height: 5px; background: var(--border); border-radius: 3px; }
         .mp-nut-bar { height: 100%; border-radius: 3px; background: var(--primary); transition: width 0.3s; }
         .mp-nut-cal { color: var(--text-muted); white-space: nowrap; }
+        .mp-nut-macros { display: flex; gap: 8px; color: var(--text-muted); font-size: 11px; }
+        .mp-nut-macros span { white-space: nowrap; }
+        .mp-nut-day-label { font-size: 11px; font-weight: 600; color: var(--text-muted); align-self: center; padding: 0 4px; white-space: nowrap; }
+        .mp-day-head { padding: 10px 8px; text-align: center; border-left: 1px solid var(--border); cursor: pointer; transition: background 0.15s; }
+        .mp-day-head:hover { background: var(--hover, rgba(0,0,0,0.04)); }
+        .mp-day-head.selected { background: var(--primary-light, rgba(var(--primary-rgb,99,102,241),0.1)); }
+        .mp-day-head.selected .mp-day-date { color: var(--primary); font-weight: 700; }
 
         /* Week grid */
         .mp-grid-wrap { flex: 1; overflow: auto; }
         .mp-grid { display: grid; grid-template-columns: 100px repeat(7, 1fr); min-width: 760px; }
         .mp-grid-head { background: var(--surface); border-bottom: 2px solid var(--border); position: sticky; top: 0; z-index: 5; }
         .mp-grid-head-cat { padding: 10px 14px; font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--text-muted); }
-        .mp-day-head { padding: 10px 8px; text-align: center; border-left: 1px solid var(--border); }
         .mp-day-name { font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--text-muted); }
         .mp-day-date { font-size: 18px; font-weight: 700; color: var(--text); line-height: 1.1; }
         .mp-day-head.today .mp-day-date { color: var(--primary); }
@@ -744,6 +752,7 @@
     let mpEditMealId       = null;
     let mpEditPlanIds      = [];
     let mpSelectedMealName = null;
+    let mpSelectedDay      = null;   // null = use today
 
     function mpApi(method, path, body) {
         const opts = { method, headers: { 'Content-Type': 'application/json' } };
@@ -833,9 +842,15 @@
             mpFmtDisplay(mpWeekStart) + ' – ' + mpFmtDisplay(end);
     }
 
-    function mpPrevWeek() { mpWeekStart.setDate(mpWeekStart.getDate() - 7); updateMpWeekLabel(); loadMpData(); }
-    function mpNextWeek() { mpWeekStart.setDate(mpWeekStart.getDate() + 7); updateMpWeekLabel(); loadMpData(); }
-    function mpGoToday()  { mpWeekStart = mpMonday(new Date()); updateMpWeekLabel(); loadMpData(); }
+    function mpPrevWeek() { mpSelectedDay = null; mpWeekStart.setDate(mpWeekStart.getDate() - 7); updateMpWeekLabel(); loadMpData(); }
+    function mpNextWeek() { mpSelectedDay = null; mpWeekStart.setDate(mpWeekStart.getDate() + 7); updateMpWeekLabel(); loadMpData(); }
+    function mpGoToday()  { mpSelectedDay = null; mpWeekStart = mpMonday(new Date()); updateMpWeekLabel(); loadMpData(); }
+
+    function mpSelectDay(dateStr) {
+        mpSelectedDay = (mpSelectedDay === dateStr) ? null : dateStr;
+        renderMpGrid();
+        renderMpNutrition();
+    }
 
     function mpParseSectionName(sectionName) {
         for (const u of mpUsers) {
@@ -873,8 +888,10 @@
         let html = '';
         html += `<div class="mp-grid-head mp-grid-head-cat"></div>`;
         days.forEach((d, i) => {
-            const isToday = mpFmtDate(d) === todayStr;
-            html += `<div class="mp-grid-head mp-day-head${isToday ? ' today' : ''}">
+            const dateStr  = mpFmtDate(d);
+            const isToday  = dateStr === todayStr;
+            const isSel    = dateStr === mpSelectedDay;
+            html += `<div class="mp-grid-head mp-day-head${isToday ? ' today' : ''}${isSel ? ' selected' : ''}" onclick="mpSelectDay('${dateStr}')" title="View nutrition for this day">
                 <div class="mp-day-name">${DAY_NAMES[i]}</div>
                 <div class="mp-day-date">${d.getDate()}</div>
             </div>`;
@@ -923,22 +940,40 @@
         const strip = document.getElementById('mpNutritionStrip');
         if (!mpUsers.length) { strip.innerHTML = ''; return; }
         const todayStr   = mpFmtDate(new Date());
-        const todayPlans = mpGrocyPlans.filter(p => p.day === todayStr && p.local_user_id);
+        const activeDay  = mpSelectedDay || todayStr;
+        const dayPlans   = mpGrocyPlans.filter(p => p.day === activeDay && p.local_user_id);
+        const dayLabel   = activeDay === todayStr ? 'Today' : (() => {
+            const d = new Date(activeDay + 'T00:00:00');
+            return d.toLocaleDateString(undefined, {weekday: 'short', month: 'short', day: 'numeric'});
+        })();
 
-        strip.innerHTML = mpUsers.map(u => {
-            const plans = todayPlans.filter(p => p.local_user_id === u.id);
-            const cals  = plans.reduce((s, p) => s + (parseFloat(p.calories) || 0), 0);
-            const goal  = parseFloat(u.calorie_goal) || 0;
-            const pct   = goal ? Math.min(100, Math.round(cals / goal * 100)) : 0;
-            const init  = (u.name || '?').charAt(0).toUpperCase();
-            const color = u.color || '#555';
+        strip.innerHTML = `<span class="mp-nut-day-label">${dayLabel}</span>` + mpUsers.map(u => {
+            const plans   = dayPlans.filter(p => p.local_user_id === u.id);
+            const cals    = plans.reduce((s, p) => s + (parseFloat(p.calories) || 0), 0);
+            const protein = plans.reduce((s, p) => s + (parseFloat(p.protein)  || 0), 0);
+            const carbs   = plans.reduce((s, p) => s + (parseFloat(p.carbs)    || 0), 0);
+            const fat     = plans.reduce((s, p) => s + (parseFloat(p.fat)      || 0), 0);
+            const goal    = parseFloat(u.calorie_goal) || 0;
+            const pct     = goal ? Math.min(100, Math.round(cals / goal * 100)) : 0;
+            const init    = (u.name || '?').charAt(0).toUpperCase();
+            const color   = u.color || '#555';
             const barColor = pct > 100 ? 'var(--danger)' : pct > 80 ? 'var(--warning)' : 'var(--primary)';
+            const hasMacros = protein || carbs || fat;
+            const macroHtml = hasMacros
+                ? `<div class="mp-nut-macros"><span>P ${Math.round(protein)}g</span><span>C ${Math.round(carbs)}g</span><span>F ${Math.round(fat)}g</span></div>`
+                : '';
             return `<div class="mp-nut-chip">
                 <div class="mp-nut-avatar" style="background:${escHtml(color)}">${init}</div>
-                <span class="mp-nut-name">${escHtml(u.name || '')}</span>
-                ${goal ? `<div class="mp-nut-bar-wrap"><div class="mp-nut-bar" style="width:${pct}%;background:${barColor}"></div></div>
-                <span class="mp-nut-cal">${Math.round(cals)}/${Math.round(goal)} kcal</span>` :
-                `<span class="mp-nut-cal">${Math.round(cals)} kcal today</span>`}
+                <div class="mp-nut-info">
+                    <div class="mp-nut-top">
+                        <span class="mp-nut-name">${escHtml(u.name || '')}</span>
+                        ${goal
+                            ? `<div class="mp-nut-bar-wrap"><div class="mp-nut-bar" style="width:${pct}%;background:${barColor}"></div></div>
+                               <span class="mp-nut-cal">${Math.round(cals)}/${Math.round(goal)} kcal</span>`
+                            : `<span class="mp-nut-cal">${Math.round(cals)} kcal</span>`}
+                    </div>
+                    ${macroHtml}
+                </div>
             </div>`;
         }).join('');
     }
