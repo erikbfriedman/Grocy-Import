@@ -796,6 +796,24 @@
             ]);
             mpMealLibrary = Array.isArray(lib) ? lib : [];
 
+            // Pull Grocy recipes and merge into the picker list
+            try {
+                const gr = await fetch(url('/api/grocy-proxy/objects/recipes'));
+                if (gr.ok) {
+                    const recipes = await gr.json();
+                    if (Array.isArray(recipes)) {
+                        const known = new Set(mpMealLibrary.map(m => m.name));
+                        recipes.forEach(r => {
+                            if (r.name && !known.has(r.name)) {
+                                mpMealLibrary.push({name: r.name});
+                                known.add(r.name);
+                            }
+                        });
+                        mpMealLibrary.sort((a, b) => a.name.localeCompare(b.name));
+                    }
+                }
+            } catch(_) {}
+
             mpUsers      = (Array.isArray(users)     ? users     : []).map(u => ({...u, id: String(u.id)}));
             mpCategories = (Array.isArray(cats)      ? cats      : [])
                             .map(c => ({...c, id: String(c.id), sort_order: parseInt(c.sort_order) || 0}))
