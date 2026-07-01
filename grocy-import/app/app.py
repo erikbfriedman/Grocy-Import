@@ -873,6 +873,25 @@ def mp_sync_to_grocy(meal_id):
     if not meal_users:
         return jsonify({'ok': True, 'synced': 0})
 
+    # Find or create the Grocy recipe for this meal name
+    recipe_id = None
+    try:
+        r = requests.get(f'{GROCY_URL}/api/objects/recipes',
+                         headers=grocy_headers(), timeout=10)
+        if r.ok:
+            for rec in (r.json() or []):
+                if rec.get('name') == meal['recipe_name']:
+                    recipe_id = int(rec['id'])
+                    break
+        if recipe_id is None:
+            r = requests.post(f'{GROCY_URL}/api/objects/recipes',
+                              headers=grocy_headers(),
+                              json={'name': meal['recipe_name']}, timeout=10)
+            if r.ok:
+                recipe_id = int(r.json().get('created_object_id', 0)) or None
+    except Exception as e:
+        return jsonify({'ok': False, 'errors': [f'recipe lookup/create: {e}']})
+
     # Load existing Grocy meal_plan_sections
     try:
         r = requests.get(f'{GROCY_URL}/api/objects/meal_plan_sections',
@@ -906,7 +925,7 @@ def mp_sync_to_grocy(meal_id):
                               headers=grocy_headers(),
                               json={
                                   'day':             meal['plan_date'],
-                                  'note':            meal['recipe_name'],
+                                  'recipe_id':       recipe_id,
                                   'recipe_servings': float(mu.get('servings') or 1),
                                   'section_id':      section_id,
                               }, timeout=10)

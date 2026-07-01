@@ -578,10 +578,7 @@
                         <button class="mp-new-meal-btn" id="mpNewMealBtn" onclick="mpToggleNewMeal()">+ New meal</button>
                         <div class="mp-new-meal-input" id="mpNewMealInput" style="display:none">
                             <input type="text" id="mpNewMealName" placeholder="e.g. Chicken Alfredo" autocomplete="off">
-                            <label class="mp-save-lib-row">
-                                <input type="checkbox" id="mpSaveToLib">
-                                <span>Save to meal library</span>
-                            </label>
+                            <div style="font-size:11px;color:var(--text-muted);margin-top:4px">Saves as a new Grocy recipe</div>
                         </div>
                     </div>
                     <div>
@@ -787,29 +784,24 @@
             const weekEnd = new Date(mpWeekStart);
             weekEnd.setDate(weekEnd.getDate() + 6);
 
-            const [users, cats, allMeals, allMealUsers, lib] = await Promise.all([
+            const [users, cats, allMeals, allMealUsers] = await Promise.all([
                 mpApi('GET', 'users'),
                 mpApi('GET', 'categories'),
                 mpApi('GET', 'meals'),
                 mpApi('GET', 'meal_users'),
-                mpApi('GET', 'meal_library'),
             ]);
-            mpMealLibrary = Array.isArray(lib) ? lib : [];
 
-            // Pull Grocy recipes and merge into the picker list
+            // Grocy recipes are the exclusive source for the meal picker
+            mpMealLibrary = [];
             try {
                 const gr = await fetch(url('/api/grocy-proxy/objects/recipes'));
                 if (gr.ok) {
                     const recipes = await gr.json();
                     if (Array.isArray(recipes)) {
-                        const known = new Set(mpMealLibrary.map(m => m.name));
-                        recipes.forEach(r => {
-                            if (r.name && !known.has(r.name)) {
-                                mpMealLibrary.push({name: r.name});
-                                known.add(r.name);
-                            }
-                        });
-                        mpMealLibrary.sort((a, b) => a.name.localeCompare(b.name));
+                        mpMealLibrary = recipes
+                            .filter(r => r.name)
+                            .map(r => ({name: r.name, grocy_id: String(r.id)}))
+                            .sort((a, b) => a.name.localeCompare(b.name));
                     }
                 }
             } catch(_) {}
@@ -947,8 +939,6 @@
         document.getElementById('mpNewMealName').value = '';
         document.getElementById('mpNewMealInput').style.display = 'none';
         document.getElementById('mpNewMealBtn').style.display = '';
-        const saveChk = document.getElementById('mpSaveToLib');
-        if (saveChk) saveChk.checked = false;
         const saveBtn = document.querySelector('.mp-modal-foot').querySelectorAll('button')[1];
         if (saveBtn) saveBtn.textContent = 'Add Meal';
         mpRenderLibList();
@@ -1008,8 +998,6 @@
         document.getElementById('mpNewMealInput').style.display = inLib ? 'none' : 'flex';
         document.getElementById('mpNewMealBtn').style.display = inLib ? '' : 'none';
         document.getElementById('mpNewMealName').value = inLib ? '' : (m.recipe_name || '');
-        const saveChk = document.getElementById('mpSaveToLib');
-        if (saveChk) saveChk.checked = false;
         const saveBtn = document.querySelector('.mp-modal-foot').querySelectorAll('button')[1];
         if (saveBtn) saveBtn.textContent = 'Save Changes';
         mpRenderLibList();
@@ -1036,7 +1024,6 @@
         }).join('');
         document.getElementById('mpModalUsers').innerHTML = usersHtml || '<p style="color:var(--text-muted);font-size:13px">No users yet.</p>';
         document.getElementById('mpModalBack').classList.add('open');
-        setTimeout(() => document.getElementById('mpRecipeName')?.focus(), 50);
     }
 
     // ── Meal library list picker ──────────────────────────────────
@@ -1053,7 +1040,7 @@
         }
         list.innerHTML = matches.map(m =>
             `<div class="mp-lib-item${mpSelectedMealName === m.name ? ' selected' : ''}"
-                  onclick="mpSelectLibMeal(${JSON.stringify(m.name)})">${escHtml(m.name)}</div>`
+                  data-name="${escHtml(m.name)}" onclick="mpSelectLibMeal(this.dataset.name)">${escHtml(m.name)}</div>`
         ).join('');
     }
 
@@ -1137,10 +1124,15 @@
                 })
             ));
 
-            // Save to library if this is a new meal and user checked the box
-            if (newMealVisible && document.getElementById('mpSaveToLib')?.checked &&
-                !mpMealLibrary.some(m => m.name === name)) {
-                try { await mpApi('POST', 'meal_library', { name }); } catch(_) {}
+            // New meals are saved as Grocy recipes so they appear in future pickers
+            if (newMealVisible && !mpMealLibrary.some(m => m.name === name)) {
+                try {
+                    await fetch(url('/api/grocy-proxy/objects/recipes'), {
+                        method: 'POST',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({name}),
+                    });
+                } catch(_) {}
             }
 
             // Sync to Grocy Meal Planner
