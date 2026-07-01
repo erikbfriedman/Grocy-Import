@@ -943,6 +943,71 @@ def mp_sync_to_grocy(meal_id):
     return jsonify({'ok': not errors, 'synced': synced, 'errors': errors})
 
 
+@app.route('/api/mp/recipe-nutrition/<int:recipe_id>')
+def mp_recipe_nutrition(recipe_id):
+    """Return per-serving calories and macros for a Grocy recipe."""
+    if not (GROCY_URL and GROCY_API_KEY):
+        return jsonify({'ok': False})
+    try:
+        r = requests.get(f'{GROCY_URL}/api/recipes/{recipe_id}/fulfillment',
+                         headers=grocy_headers(), timeout=10)
+        if not r.ok:
+            return jsonify({'ok': False, 'reason': f'Grocy {r.status_code}'})
+
+        data = r.json()
+        recipe = data.get('recipe', {})
+        base_servings = max(float(recipe.get('base_servings') or 1), 1)
+
+        result = {'ok': True, 'calories': None, 'protein': None, 'carbs': None, 'fat': None}
+
+        cals = data.get('calories_per_serving')
+        if cals is not None:
+            result['calories'] = round(float(cals))
+
+        # Compute macros by fetching each ingredient's product userfields
+        details = data.get('ingredient_details', [])
+        if details:
+            ingredients = []
+            for d in details:
+                ing = d.get('ingredient', {})
+                pid = ing.get('product_id')
+                amount = float(ing.get('amount') or 0)
+                if pid and amount:
+                    ingredients.append({'product_id': str(pid), 'amount': amount})
+
+            uf_map = {}
+            for pid in {i['product_id'] for i in ingredients}:
+                try:
+                    uf_r = requests.get(f'{GROCY_URL}/api/userfields/products/{pid}',
+                                        headers=grocy_headers(), timeout=5)
+                    if uf_r.ok:
+                        uf_map[pid] = uf_r.json() or {}
+                except Exception:
+                    pass
+
+            protein = carbs = fat = 0.0
+            has_any = False
+            for ing in ingredients:
+                uf = uf_map.get(ing['product_id'], {})
+                p = float(uf.get('Protein') or 0)
+                c = float(uf.get('Carbohydrates') or 0)
+                f = float(uf.get('Fat') or 0)
+                protein += p * ing['amount']
+                carbs   += c * ing['amount']
+                fat     += f * ing['amount']
+                if p or c or f:
+                    has_any = True
+
+            if has_any:
+                result['protein'] = round(protein / base_servings, 1)
+                result['carbs']   = round(carbs   / base_servings, 1)
+                result['fat']     = round(fat     / base_servings, 1)
+
+        return jsonify(result)
+    except Exception as e:
+        return jsonify({'ok': False, 'error': str(e)})
+
+
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 8099))
     app.run(host='0.0.0.0', port=port, debug=False)

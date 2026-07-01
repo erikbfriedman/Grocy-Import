@@ -799,7 +799,7 @@
                     const recipes = await gr.json();
                     if (Array.isArray(recipes)) {
                         mpMealLibrary = recipes
-                            .filter(r => r.name)
+                            .filter(r => r.name && r.id > 0)  // exclude internal mealplan-* entries (negative IDs)
                             .map(r => ({name: r.name, grocy_id: String(r.id)}))
                             .sort((a, b) => a.name.localeCompare(b.name));
                     }
@@ -1046,11 +1046,32 @@
 
     function mpSelectLibMeal(name) {
         mpSelectedMealName = name;
-        // Hide new-meal input and show the "+ New meal" button again
         document.getElementById('mpNewMealInput').style.display = 'none';
         document.getElementById('mpNewMealBtn').style.display = '';
         document.getElementById('mpNewMealName').value = '';
         mpRenderLibList();
+
+        const recipe = mpMealLibrary.find(m => m.name === name);
+        if (!recipe?.grocy_id) return;
+        if (recipe._nutrition) { _mpFillNutrition(recipe._nutrition); return; }
+        fetch(url('/api/mp/recipe-nutrition/' + recipe.grocy_id))
+            .then(r => r.ok ? r.json() : null)
+            .then(nut => {
+                if (!nut?.ok) return;
+                recipe._nutrition = nut;
+                if (mpSelectedMealName === name) _mpFillNutrition(nut);
+            })
+            .catch(() => {});
+    }
+
+    function _mpFillNutrition(nut) {
+        mpUsers.forEach(u => {
+            const servings = parseFloat(document.getElementById(`mpSrv-${u.id}`)?.value) || 1;
+            if (nut.calories != null) { const el = document.getElementById(`mpCal-${u.id}`); if (el) el.value = Math.round(nut.calories * servings); }
+            if (nut.protein  != null) { const el = document.getElementById(`mpPro-${u.id}`);  if (el) el.value = Math.round(nut.protein  * servings); }
+            if (nut.carbs    != null) { const el = document.getElementById(`mpCarb-${u.id}`); if (el) el.value = Math.round(nut.carbs    * servings); }
+            if (nut.fat      != null) { const el = document.getElementById(`mpFat-${u.id}`);  if (el) el.value = Math.round(nut.fat      * servings); }
+        });
     }
 
     function mpToggleNewMeal() {
