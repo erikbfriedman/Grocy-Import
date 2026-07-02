@@ -378,6 +378,10 @@
         .rn-input:focus { outline: none; border-color: var(--primary); }
         .rn-input.saved { border-color: #22c55e; background: rgba(34,197,94,0.08); }
         .rn-input.error { border-color: var(--danger); }
+        .rn-calc-btn { font-size: 11px; padding: 3px 8px; background: var(--surface2); border: 1px solid var(--border); border-radius: 4px; color: var(--text-muted); cursor: pointer; white-space: nowrap; }
+        .rn-calc-btn:hover:not(:disabled) { background: var(--primary); color: #fff; border-color: var(--primary); }
+        .rn-calc-btn:disabled { opacity: 0.5; cursor: default; }
+        .rn-status { font-size: 11px; margin-left: 6px; }
         .rn-status { font-size: 11px; white-space: nowrap; padding: 0 6px; }
         .mp-macro-val { font-size: 13px; }
         .mp-modal-foot { padding: 12px 20px; border-top: 1px solid var(--border); display: flex; gap: 8px; justify-content: flex-end; }
@@ -1561,9 +1565,52 @@
                 <td><input class="rn-input" type="number" step="any" min="0" placeholder="—" value="${fmt(rec.protein)}" data-rn-field="protein" data-rn-id="${id}" onblur="rnSave(${id}, this)"></td>
                 <td><input class="rn-input" type="number" step="any" min="0" placeholder="—" value="${fmt(rec.carbs)}" data-rn-field="carbs" data-rn-id="${id}" onblur="rnSave(${id}, this)"></td>
                 <td><input class="rn-input" type="number" step="any" min="0" placeholder="—" value="${fmt(rec.fat)}" data-rn-field="fat" data-rn-id="${id}" onblur="rnSave(${id}, this)"></td>
-                <td class="rn-status" id="rn-status-${id}"></td>
+                <td style="white-space:nowrap;vertical-align:middle">
+                    <button class="rn-calc-btn" onclick="rnCalcFromIngredients(${id})" title="Calculate macros from recipe ingredients">⟳ From ingredients</button>
+                    <span class="rn-status" id="rn-status-${id}"></span>
+                </td>
             </tr>`;
         }).join('');
+    }
+
+    async function rnCalcFromIngredients(recipeId) {
+        const statusEl = document.getElementById(`rn-status-${recipeId}`);
+        const btn = document.querySelector(`tr[data-rn-id="${recipeId}"] .rn-calc-btn`);
+        if (statusEl) { statusEl.textContent = '…'; statusEl.style.color = 'var(--text-muted)'; }
+        if (btn) btn.disabled = true;
+        try {
+            const r = await fetch(url(`/api/mp/recipe-nutrition-from-ingredients/${recipeId}`));
+            const data = await r.json();
+            if (!data.ok) {
+                if (statusEl) { statusEl.textContent = data.reason || data.error || 'Error'; statusEl.style.color = 'var(--danger)'; }
+                return;
+            }
+            const row = document.querySelector(`tr[data-rn-id="${recipeId}"]`);
+            if (!row) return;
+            const fields = { calories: data.calories, protein: data.protein, carbs: data.carbs, fat: data.fat };
+            row.querySelectorAll('.rn-input').forEach(inp => {
+                const val = fields[inp.dataset.rnField];
+                if (val != null) inp.value = Number(val).toFixed(1);
+            });
+            // Save to Grocy userfields
+            await fetch(url(`/api/mp/recipe-nutrition/${recipeId}`), {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(fields),
+            });
+            const rec = rnRecipes.find(x => String(x.id) === String(recipeId));
+            if (rec) Object.assign(rec, fields);
+            const skipNote = data.skipped ? ` (${data.skipped} skipped)` : '';
+            if (statusEl) {
+                statusEl.textContent = `Saved${skipNote}`;
+                statusEl.style.color = '#22c55e';
+                setTimeout(() => { if (statusEl) statusEl.textContent = ''; }, 3000);
+            }
+        } catch (e) {
+            if (statusEl) { statusEl.textContent = 'Error'; statusEl.style.color = 'var(--danger)'; }
+        } finally {
+            if (btn) btn.disabled = false;
+        }
     }
 
     async function rnSave(recipeId, changedInput) {

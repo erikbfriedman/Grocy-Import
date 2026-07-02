@@ -1072,6 +1072,73 @@ def mp_all_recipe_nutrition():
         return jsonify({'ok': False, 'error': str(e)})
 
 
+@app.route('/api/mp/recipe-nutrition-from-ingredients/<int:recipe_id>')
+def mp_recipe_nutrition_from_ingredients(recipe_id):
+    """Calculate per-serving macros by summing ingredient product userfields."""
+    if not (GROCY_URL and GROCY_API_KEY):
+        return jsonify({'ok': False})
+    try:
+        r = requests.get(f'{GROCY_URL}/api/recipes/{recipe_id}', headers=grocy_headers(), timeout=10)
+        if not r.ok:
+            return jsonify({'ok': False, 'reason': f'Grocy {r.status_code}'})
+        recipe_data = r.json()
+        ingredients = recipe_data.get('ingredients') or []
+        base_servings = float(recipe_data.get('base_servings') or 1)
+
+        total_protein = 0.0
+        total_carbs   = 0.0
+        total_fat     = 0.0
+        found = 0
+        skipped = 0
+
+        for ing in ingredients:
+            product_id = ing.get('product_id')
+            amount = float(ing.get('amount') or 0)
+            if not product_id or amount <= 0:
+                skipped += 1
+                continue
+            try:
+                uf_r = requests.get(f'{GROCY_URL}/api/userfields/products/{product_id}',
+                                    headers=grocy_headers(), timeout=5)
+                uf = (uf_r.json() or {}) if uf_r.ok else {}
+            except Exception:
+                skipped += 1
+                continue
+
+            protein_val = float(uf.get('Protein') or 0)
+            carbs_val   = float(uf.get('Carbohydrates') or 0)
+            fat_val     = float(uf.get('Fat') or 0)
+
+            if not (protein_val or carbs_val or fat_val):
+                skipped += 1
+                continue
+
+            srv_raw = str(uf.get('ServingSize') or '').strip()
+            m = re.match(r'([\d.]+)', srv_raw)
+            srv_qty = float(m.group(1)) if m else 1.0
+            if srv_qty <= 0:
+                srv_qty = 1.0
+
+            factor = amount / srv_qty
+            total_protein += protein_val * factor
+            total_carbs   += carbs_val   * factor
+            total_fat     += fat_val     * factor
+            found += 1
+
+        if not found:
+            return jsonify({'ok': False, 'reason': 'No ingredients have macro data — add Protein/Carbohydrates/Fat userfields to products first'})
+
+        per_p   = round(total_protein / base_servings, 1)
+        per_c   = round(total_carbs   / base_servings, 1)
+        per_f   = round(total_fat     / base_servings, 1)
+        per_cal = round(per_p * 4 + per_c * 4 + per_f * 9, 1)
+
+        return jsonify({'ok': True, 'calories': per_cal, 'protein': per_p,
+                        'carbs': per_c, 'fat': per_f, 'found': found, 'skipped': skipped})
+    except Exception as e:
+        return jsonify({'ok': False, 'error': str(e)})
+
+
 @app.route('/api/mp/grocy-week')
 def mp_grocy_week():
     """Return Grocy meal_plan entries for a week, enriched with local user/nutrition."""
