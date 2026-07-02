@@ -159,7 +159,32 @@ def guess_entity_for_column(col_name):
 
 
 def fetch_entity_rows(entity):
-    """Fetch all records for an entity (handles the special /api/users path)."""
+    """Fetch all records for an entity.
+
+    recipe_ingredients is not exposed via /api/objects/ in all Grocy versions,
+    so we fetch each recipe's ingredients individually and flatten.
+    """
+    if entity == 'recipe_ingredients':
+        try:
+            recipes_r = requests.get(f"{GROCY_URL}/api/objects/recipes",
+                                     headers=grocy_headers(), timeout=10)
+            recipes = recipes_r.json() if recipes_r.ok else []
+            all_ingredients = []
+            for rec in recipes:
+                rid = rec.get('id')
+                if not rid or int(rid) < 0:
+                    continue  # skip internal mealplan-* shadow records
+                try:
+                    r = requests.get(f"{GROCY_URL}/api/recipes/{rid}",
+                                     headers=grocy_headers(), timeout=5)
+                    if r.ok:
+                        all_ingredients.extend(r.json().get('ingredients') or [])
+                except Exception:
+                    pass
+            return all_ingredients
+        except Exception:
+            return []
+
     api_path = '/api/users' if entity == 'users' else f'/api/objects/{entity}'
     try:
         resp = requests.get(f"{GROCY_URL}{api_path}", headers=grocy_headers(), timeout=10)
