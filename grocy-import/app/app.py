@@ -1041,15 +1041,33 @@ def mp_recipe_nutrition(recipe_id):
             for ing in ingredients:
                 uf  = uf_map.get(ing['product_id'], {})
                 amt = ing['amount']
+
+                # Nutrition is stored per-serving. ServingSize text (e.g. "2 tbsp (29g)"
+                # or "1 bagel (96g)") tells us how many stock-units = 1 serving.
+                # Parse the leading integer or fraction to get the serving divisor.
+                srv_text = str(uf.get('ServingSize') or '').strip()
+                srv_qty = 1.0
+                m = re.match(r'^(\d+)\s*/\s*(\d+)', srv_text)   # fraction e.g. "1/3"
+                if m:
+                    srv_qty = int(m.group(1)) / int(m.group(2))
+                else:
+                    m = re.match(r'^([\d.]+)', srv_text)         # decimal/int e.g. "2"
+                    if m:
+                        srv_qty = float(m.group(1))
+                if srv_qty <= 0:
+                    srv_qty = 1.0
+
+                # Scale: how many servings does the recipe ingredient amount represent?
+                factor = amt / srv_qty
+
                 p = float(uf.get('Protein')        or 0)
                 c = float(uf.get('Carbohydrates')   or 0)
                 f = float(uf.get('Fat')             or 0)
-                # Some setups store calories in a product userfield too
                 cal_uf = float(uf.get('calories') or uf.get('Calories') or 0)
-                protein       += p   * amt
-                carbs         += c   * amt
-                fat           += f   * amt
-                calories_sum  += cal_uf * amt
+                protein       += p      * factor
+                carbs         += c      * factor
+                fat           += f      * factor
+                calories_sum  += cal_uf * factor
                 if p or c or f: has_macros  = True
                 if cal_uf:      has_cals_uf = True
 
