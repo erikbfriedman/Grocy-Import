@@ -949,9 +949,15 @@ _RECIPE_UF_FIELDS = {
     'carbs':    ('Carbohydrates (g, per serving)', 'double'),
     'fat':      ('Fat (g, per serving)',           'double'),
 }
+_recipe_uf_ensured = False
 
 def _ensure_recipe_userfields():
     """Create macro userfield definitions on the recipes entity if they don't exist."""
+    global _recipe_uf_ensured
+    if _recipe_uf_ensured:
+        return
+    if not (GROCY_URL and GROCY_API_KEY):
+        return
     try:
         r = requests.get(f'{GROCY_URL}/api/objects/userfields',
                          headers=grocy_headers(),
@@ -962,6 +968,7 @@ def _ensure_recipe_userfields():
                 requests.post(f'{GROCY_URL}/api/objects/userfields', headers=grocy_headers(),
                               json={'name': name, 'caption': caption, 'entity': 'recipes',
                                     'type': typ, 'show_as_table_column': 1}, timeout=10)
+        _recipe_uf_ensured = True
     except Exception:
         pass
 
@@ -1069,9 +1076,29 @@ def mp_recipe_nutrition(recipe_id):
         return jsonify({'ok': False, 'error': str(e)})
 
 
+@app.route('/api/mp/recipe-nutrition/<int:recipe_id>', methods=['PUT'])
+def mp_recipe_nutrition_save(recipe_id):
+    """Save per-serving macros to Grocy recipe userfields (manual entry path)."""
+    if not (GROCY_URL and GROCY_API_KEY):
+        return jsonify({'ok': False})
+    data = request.json or {}
+    to_save = {k: round(float(data[k]), 2) for k in ('calories', 'protein', 'carbs', 'fat')
+               if data.get(k) is not None}
+    if not to_save:
+        return jsonify({'ok': False, 'reason': 'no values provided'})
+    _ensure_recipe_userfields()
+    try:
+        r = requests.put(f'{GROCY_URL}/api/userfields/recipes/{recipe_id}',
+                         headers=grocy_headers(), json=to_save, timeout=5)
+        return jsonify({'ok': r.ok, 'saved': to_save})
+    except Exception as e:
+        return jsonify({'ok': False, 'error': str(e)})
+
+
 @app.route('/api/mp/grocy-week')
 def mp_grocy_week():
     """Return Grocy meal_plan entries for a week, enriched with local user/nutrition."""
+    _ensure_recipe_userfields()   # idempotent — runs once per process
     if not (GROCY_URL and GROCY_API_KEY):
         return jsonify({'ok': False, 'plans': [], 'sections': [], 'reason': 'Grocy not configured'})
     start = request.args.get('start', '')

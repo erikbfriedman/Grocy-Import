@@ -1205,6 +1205,27 @@
             const result = await resp.json();
             if (!result.ok && result.errors?.length) throw new Error(result.errors.join('; '));
 
+            // Persist per-serving macros back to the Grocy recipe userfields so future
+            // selections auto-fill. Uses the first participant's values / servings.
+            const recipe = mpMealLibrary.find(m => m.name === name);
+            if (recipe?.grocy_id && participants.length) {
+                const first = participants[0];
+                const srvs = first.servings || 1;
+                const perServing = {};
+                if (first.calories) perServing.calories = Math.round(first.calories / srvs);
+                if (first.protein)  perServing.protein  = Math.round((first.protein  / srvs) * 10) / 10;
+                if (first.carbs)    perServing.carbs    = Math.round((first.carbs    / srvs) * 10) / 10;
+                if (first.fat)      perServing.fat      = Math.round((first.fat      / srvs) * 10) / 10;
+                if (Object.keys(perServing).length) {
+                    fetch(url('/api/mp/recipe-nutrition/' + recipe.grocy_id), {
+                        method: 'PUT',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify(perServing),
+                    }).catch(() => {});
+                    recipe._nutrition = {ok: true, source: 'userfields', ...perServing};
+                }
+            }
+
             closeMpModal();
             await loadMpData();
         } catch (e) {
