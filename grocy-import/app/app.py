@@ -1022,28 +1022,31 @@ def mp_recipe_nutrition(recipe_id):
                     'source':   'userfields',
                 })
 
-        # Slow path: compute from recipe ingredients via fulfillment endpoint
-        r = requests.get(f'{GROCY_URL}/api/recipes/{recipe_id}/fulfillment',
-                         headers=grocy_headers(), timeout=10)
-        if not r.ok:
-            return jsonify({'ok': False, 'reason': f'fulfillment {r.status_code}'})
+        # Slow path: compute from recipe ingredients.
+        # Use /api/recipes/{id} for the ingredient list (flat, always available)
+        # and /api/recipes/{id}/fulfillment only for calories_per_serving.
+        rec_r = requests.get(f'{GROCY_URL}/api/recipes/{recipe_id}',
+                             headers=grocy_headers(), timeout=10)
+        if not rec_r.ok:
+            return jsonify({'ok': False, 'reason': f'recipe fetch {rec_r.status_code}'})
 
-        data = r.json()
-        recipe_data  = data.get('recipe', {})
-        base_servings = max(float(recipe_data.get('base_servings') or 1), 1)
+        rec_data      = rec_r.json()
+        recipe_obj    = rec_data.get('recipe', {})
+        base_servings = max(float(recipe_obj.get('base_servings') or 1), 1)
         result = {'ok': True, 'calories': None, 'protein': None, 'carbs': None, 'fat': None, 'source': 'computed'}
 
-        # Grocy's own calories_per_serving (from product.calories native field)
-        cals = data.get('calories_per_serving')
-        if cals is not None:
-            result['calories'] = round(float(cals))
+        # Grocy's own calories_per_serving from the fulfillment endpoint
+        ful_r = requests.get(f'{GROCY_URL}/api/recipes/{recipe_id}/fulfillment',
+                             headers=grocy_headers(), timeout=10)
+        if ful_r.ok:
+            cals = ful_r.json().get('calories_per_serving')
+            if cals is not None:
+                result['calories'] = round(float(cals))
 
-        # Ingredients — try both key names used across Grocy versions
-        raw_details = data.get('ingredient_details') or data.get('ingredients') or []
+        # Ingredient list comes directly from the recipe endpoint as a flat array
+        raw_ingredients = rec_data.get('ingredients') or []
         ingredients = []
-        for d in raw_details:
-            # ingredient_details uses nested {ingredient: {...}}; older may be flat
-            ing = d.get('ingredient') if isinstance(d.get('ingredient'), dict) else d
+        for ing in raw_ingredients:
             pid    = str(ing.get('product_id') or '')
             amount = float(ing.get('amount') or 0)
             if pid and amount:

@@ -968,9 +968,9 @@
                 : '';
             return `<div class="mp-nut-chip">
                 <div class="mp-nut-avatar" style="background:${escHtml(color)}">${init}</div>
+                <span class="mp-nut-name">${escHtml(u.name || '')}</span>
                 <div class="mp-nut-info">
                     <div class="mp-nut-top">
-                        <span class="mp-nut-name">${escHtml(u.name || '')}</span>
                         ${goal
                             ? `<div class="mp-nut-bar-wrap"><div class="mp-nut-bar" style="width:${pct}%;background:${barColor}"></div></div>
                                <span class="mp-nut-cal">${Math.round(cals)}/${Math.round(goal)} kcal</span>`
