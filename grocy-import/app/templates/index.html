@@ -366,6 +366,19 @@
         .mp-macro-hint { font-size: 12px; border-radius: 6px; padding: 6px 10px; margin-bottom: 8px; }
         .mp-macro-hint-ok   { background: rgba(34,197,94,0.12); color: #16a34a; }
         .mp-macro-hint-info { background: rgba(99,102,241,0.1); color: var(--primary); }
+
+        /* ── Recipe Nutrition table ─────────────────────────────── */
+        .rn-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+        .rn-table th { text-align: left; padding: 6px 10px; border-bottom: 2px solid var(--border); color: var(--text-muted); font-size: 11px; text-transform: uppercase; letter-spacing: .04em; white-space: nowrap; }
+        .rn-table td { padding: 4px 6px; border-bottom: 1px solid var(--border); vertical-align: middle; }
+        .rn-table tr:hover td { background: var(--surface2); }
+        .rn-table td:first-child { font-weight: 500; color: var(--text); padding-left: 10px; }
+        .rn-table td:nth-child(2) { color: var(--text-muted); text-align: center; }
+        .rn-input { width: 72px; background: var(--surface2); border: 1px solid var(--border); border-radius: 4px; color: var(--text); padding: 3px 6px; font-size: 13px; text-align: right; }
+        .rn-input:focus { outline: none; border-color: var(--primary); }
+        .rn-input.saved { border-color: #22c55e; background: rgba(34,197,94,0.08); }
+        .rn-input.error { border-color: var(--danger); }
+        .rn-status { font-size: 11px; white-space: nowrap; padding: 0 6px; }
         .mp-macro-val { font-size: 13px; }
         .mp-modal-foot { padding: 12px 20px; border-top: 1px solid var(--border); display: flex; gap: 8px; justify-content: flex-end; }
         .mp-save-lib-row { display: flex; align-items: center; gap: 6px; margin-top: 6px; font-size: 12px; color: var(--text-muted); cursor: pointer; user-select: none; }
@@ -415,6 +428,9 @@
         </div>
         <div class="nav-item" data-page="mealplanner" onclick="showPage('mealplanner')">
             <span class="nav-icon">🍽️</span> Meal Planner
+        </div>
+        <div class="nav-item" data-page="recipenutrition" onclick="showPage('recipenutrition')">
+            <span class="nav-icon">🥗</span> Recipe Nutrition
         </div>
 
         <div class="nav-section">Reference</div>
@@ -620,6 +636,33 @@
         </div>
 
         <!-- ════════════════════════════════════════════════════════
+             RECIPE NUTRITION PAGE
+        ════════════════════════════════════════════════════════ -->
+        <div class="page" id="page-recipenutrition">
+            <div class="page-header">
+                <span class="page-title">Recipe Nutrition</span>
+                <div class="ph-sep"></div>
+                <input type="text" id="rnFilter" placeholder="Filter recipes…" oninput="rnRender()" style="padding:5px 10px;border:1px solid var(--border);border-radius:6px;background:var(--surface2);color:var(--text);font-size:13px;width:200px">
+                <button class="btn" onclick="rnLoad()" style="margin-left:8px">Refresh</button>
+            </div>
+            <div style="padding:16px 20px;overflow:auto;flex:1">
+                <p style="font-size:12px;color:var(--text-muted);margin:0 0 12px">Enter per-serving values. Changes save automatically when you leave a field.</p>
+                <table class="rn-table">
+                    <thead><tr>
+                        <th>Recipe</th>
+                        <th>Servings</th>
+                        <th>Calories</th>
+                        <th>Protein (g)</th>
+                        <th>Carbs (g)</th>
+                        <th>Fat (g)</th>
+                        <th></th>
+                    </tr></thead>
+                    <tbody id="rnTableBody"><tr><td colspan="7" style="text-align:center;color:var(--text-muted);padding:24px">Loading…</td></tr></tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- ════════════════════════════════════════════════════════
              STOCK PAGE
         ════════════════════════════════════════════════════════ -->
         <div class="page" id="page-stock">
@@ -723,6 +766,7 @@
             if (!areaLocations.length) loadAreaLocations();
         }
         if (name === 'mealplanner') initMealPlanner();
+        if (name === 'recipenutrition') rnLoad();
     }
 
     // ── Shared area locations ────────────────────────────────────
@@ -1473,6 +1517,89 @@
         const users = await mpApi('GET', 'users');
         mpUsers = (Array.isArray(users) ? users : []).map(u => ({...u, id: String(u.id)}));
         renderMpUserManager();
+    }
+
+    // ══════════════════════════════════════════════════════════════
+    //  RECIPE NUTRITION PAGE
+    // ══════════════════════════════════════════════════════════════
+    let rnRecipes = [];
+
+    async function rnLoad() {
+        const tbody = document.getElementById('rnTableBody');
+        if (!tbody) return;
+        tbody.innerHTML = '<tr><td colspan="7" style="padding:16px;color:var(--text-muted)">Loading…</td></tr>';
+        try {
+            const r = await fetch(url('/api/mp/all-recipe-nutrition'));
+            const data = await r.json();
+            if (!data.ok) {
+                tbody.innerHTML = `<tr><td colspan="7" style="padding:16px;color:var(--danger)">Failed to load: ${escHtml(data.reason || data.error || 'unknown error')}</td></tr>`;
+                return;
+            }
+            rnRecipes = data.recipes || [];
+            rnRender();
+        } catch (e) {
+            tbody.innerHTML = `<tr><td colspan="7" style="padding:16px;color:var(--danger)">Error: ${escHtml(String(e))}</td></tr>`;
+        }
+    }
+
+    function rnRender() {
+        const tbody = document.getElementById('rnTableBody');
+        if (!tbody) return;
+        const filter = (document.getElementById('rnFilter')?.value || '').toLowerCase();
+        const rows = filter ? rnRecipes.filter(r => r.name.toLowerCase().includes(filter)) : rnRecipes;
+        if (!rows.length) {
+            tbody.innerHTML = `<tr><td colspan="7" style="padding:16px;color:var(--text-muted)">${filter ? 'No recipes match filter.' : 'No recipes found.'}</td></tr>`;
+            return;
+        }
+        tbody.innerHTML = rows.map(rec => {
+            const id = rec.id;
+            const fmt = v => (v != null && v !== '') ? Number(v).toFixed(1) : '';
+            return `<tr data-rn-id="${id}">
+                <td style="font-weight:500">${escHtml(rec.name)}</td>
+                <td style="color:var(--text-muted);text-align:center">${escHtml(String(rec.base_servings || 1))}</td>
+                <td><input class="rn-input" type="number" step="any" min="0" placeholder="—" value="${fmt(rec.calories)}" data-rn-field="calories" data-rn-id="${id}" onblur="rnSave(${id}, this)"></td>
+                <td><input class="rn-input" type="number" step="any" min="0" placeholder="—" value="${fmt(rec.protein)}" data-rn-field="protein" data-rn-id="${id}" onblur="rnSave(${id}, this)"></td>
+                <td><input class="rn-input" type="number" step="any" min="0" placeholder="—" value="${fmt(rec.carbs)}" data-rn-field="carbs" data-rn-id="${id}" onblur="rnSave(${id}, this)"></td>
+                <td><input class="rn-input" type="number" step="any" min="0" placeholder="—" value="${fmt(rec.fat)}" data-rn-field="fat" data-rn-id="${id}" onblur="rnSave(${id}, this)"></td>
+                <td class="rn-status" id="rn-status-${id}"></td>
+            </tr>`;
+        }).join('');
+    }
+
+    async function rnSave(recipeId, changedInput) {
+        const row = document.querySelector(`tr[data-rn-id="${recipeId}"]`);
+        if (!row) return;
+        const inputs = row.querySelectorAll('.rn-input');
+        const payload = {};
+        inputs.forEach(inp => {
+            const field = inp.dataset.rnField;
+            const val = inp.value.trim();
+            payload[field] = val !== '' ? parseFloat(val) : null;
+        });
+        const statusEl = document.getElementById(`rn-status-${recipeId}`);
+        if (statusEl) { statusEl.textContent = '…'; statusEl.style.color = 'var(--text-muted)'; }
+        changedInput?.classList.remove('saved', 'error');
+        try {
+            const r = await fetch(url(`/api/mp/recipe-nutrition/${recipeId}`), {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload),
+            });
+            const data = await r.json();
+            if (data.ok) {
+                changedInput?.classList.add('saved');
+                setTimeout(() => changedInput?.classList.remove('saved'), 2000);
+                if (statusEl) { statusEl.textContent = 'Saved'; statusEl.style.color = '#22c55e'; setTimeout(() => { if (statusEl) statusEl.textContent = ''; }, 2000); }
+                const rec = rnRecipes.find(x => String(x.id) === String(recipeId));
+                if (rec) Object.assign(rec, payload);
+            } else {
+                changedInput?.classList.add('error');
+                if (statusEl) { statusEl.textContent = 'Error'; statusEl.style.color = 'var(--danger)'; }
+            }
+        } catch (e) {
+            changedInput?.classList.add('error');
+            if (statusEl) { statusEl.textContent = 'Error'; statusEl.style.color = 'var(--danger)'; }
+        }
     }
 
     // ══════════════════════════════════════════════════════════════

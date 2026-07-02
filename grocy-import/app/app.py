@@ -1000,143 +1000,74 @@ def _ensure_recipe_userfields():
 
 @app.route('/api/mp/recipe-nutrition/<int:recipe_id>')
 def mp_recipe_nutrition(recipe_id):
-    """Return per-serving macros for a Grocy recipe.
-    Reads from recipe userfields if populated; otherwise computes from ingredients
-    and saves back to recipe userfields so future reads are instant.
-    """
+    """Return stored per-serving macros for a recipe from Grocy userfields."""
     if not (GROCY_URL and GROCY_API_KEY):
         return jsonify({'ok': False})
     try:
-        # Fast path: read from recipe userfields if already computed
-        uf_r = requests.get(f'{GROCY_URL}/api/userfields/recipes/{recipe_id}',
-                            headers=grocy_headers(), timeout=5)
-        if uf_r.ok:
-            uf = uf_r.json() or {}
-            if uf.get('calories') is not None:
-                return jsonify({
-                    'ok':       True,
-                    'calories': round(float(uf['calories'])),
-                    'protein':  round(float(uf.get('protein') or 0), 1) if uf.get('protein')  is not None else None,
-                    'carbs':    round(float(uf.get('carbs')   or 0), 1) if uf.get('carbs')    is not None else None,
-                    'fat':      round(float(uf.get('fat')     or 0), 1) if uf.get('fat')      is not None else None,
-                    'source':   'userfields',
-                })
-
-        # Slow path: compute from recipe ingredients.
-        # Use /api/recipes/{id} for the ingredient list (flat, always available)
-        # and /api/recipes/{id}/fulfillment only for calories_per_serving.
-        rec_r = requests.get(f'{GROCY_URL}/api/recipes/{recipe_id}',
-                             headers=grocy_headers(), timeout=10)
-        if not rec_r.ok:
-            return jsonify({'ok': False, 'reason': f'recipe fetch {rec_r.status_code}'})
-
-        rec_data      = rec_r.json()
-        recipe_obj    = rec_data.get('recipe', {})
-        base_servings = max(float(recipe_obj.get('base_servings') or 1), 1)
-        result = {'ok': True, 'calories': None, 'protein': None, 'carbs': None, 'fat': None, 'source': 'computed'}
-
-        # Grocy's own calories_per_serving from the fulfillment endpoint
-        ful_r = requests.get(f'{GROCY_URL}/api/recipes/{recipe_id}/fulfillment',
-                             headers=grocy_headers(), timeout=10)
-        if ful_r.ok:
-            cals = ful_r.json().get('calories_per_serving')
-            if cals is not None:
-                result['calories'] = round(float(cals))
-
-        # Ingredient list comes directly from the recipe endpoint as a flat array
-        raw_ingredients = rec_data.get('ingredients') or []
-        ingredients = []
-        for ing in raw_ingredients:
-            pid    = str(ing.get('product_id') or '')
-            amount = float(ing.get('amount') or 0)
-            if pid and amount:
-                ingredients.append({'product_id': pid, 'amount': amount})
-
-        if ingredients:
-            # Fetch product userfields for all unique products in one pass
-            uf_map = {}
-            for pid in {i['product_id'] for i in ingredients}:
-                try:
-                    pr = requests.get(f'{GROCY_URL}/api/userfields/products/{pid}',
-                                      headers=grocy_headers(), timeout=5)
-                    if pr.ok:
-                        uf_map[pid] = pr.json() or {}
-                except Exception:
-                    pass
-
-            calories_sum = protein = carbs = fat = 0.0
-            has_macros = has_cals_uf = False
-            for ing in ingredients:
-                uf  = uf_map.get(ing['product_id'], {})
-                amt = ing['amount']
-
-                # Nutrition is stored per-serving. ServingSize text (e.g. "2 tbsp (29g)"
-                # or "1 bagel (96g)") tells us how many stock-units = 1 serving.
-                # Parse the leading integer or fraction to get the serving divisor.
-                srv_text = str(uf.get('ServingSize') or '').strip()
-                srv_qty = 1.0
-                m = re.match(r'^(\d+)\s*/\s*(\d+)', srv_text)   # fraction e.g. "1/3"
-                if m:
-                    srv_qty = int(m.group(1)) / int(m.group(2))
-                else:
-                    m = re.match(r'^([\d.]+)', srv_text)         # decimal/int e.g. "2"
-                    if m:
-                        srv_qty = float(m.group(1))
-                if srv_qty <= 0:
-                    srv_qty = 1.0
-
-                # Scale: how many servings does the recipe ingredient amount represent?
-                factor = amt / srv_qty
-
-                p = float(uf.get('Protein')        or 0)
-                c = float(uf.get('Carbohydrates')   or 0)
-                f = float(uf.get('Fat')             or 0)
-                cal_uf = float(uf.get('calories') or uf.get('Calories') or 0)
-                protein       += p      * factor
-                carbs         += c      * factor
-                fat           += f      * factor
-                calories_sum  += cal_uf * factor
-                if p or c or f: has_macros  = True
-                if cal_uf:      has_cals_uf = True
-
-            if has_macros:
-                result['protein'] = round(protein / base_servings, 1)
-                result['carbs']   = round(carbs   / base_servings, 1)
-                result['fat']     = round(fat     / base_servings, 1)
-            # Use calories from product userfields only if Grocy's own calc is null
-            if result['calories'] is None and has_cals_uf:
-                result['calories'] = round(calories_sum / base_servings)
-
-        # Persist computed values to recipe userfields so next call is instant
-        to_save = {k: result[k] for k in ('calories', 'protein', 'carbs', 'fat') if result[k] is not None}
-        if to_save:
-            _ensure_recipe_userfields()
-            try:
-                requests.put(f'{GROCY_URL}/api/userfields/recipes/{recipe_id}',
-                             headers=grocy_headers(), json=to_save, timeout=5)
-            except Exception:
-                pass
-
-        return jsonify(result)
+        r = requests.get(f'{GROCY_URL}/api/userfields/recipes/{recipe_id}',
+                         headers=grocy_headers(), timeout=5)
+        uf = (r.json() or {}) if r.ok else {}
+        def _v(key):
+            val = uf.get(key)
+            return round(float(val), 1) if val is not None else None
+        return jsonify({'ok': True, 'calories': _v('calories'), 'protein': _v('protein'),
+                        'carbs': _v('carbs'), 'fat': _v('fat')})
     except Exception as e:
         return jsonify({'ok': False, 'error': str(e)})
 
 
 @app.route('/api/mp/recipe-nutrition/<int:recipe_id>', methods=['PUT'])
 def mp_recipe_nutrition_save(recipe_id):
-    """Save per-serving macros to Grocy recipe userfields (manual entry path)."""
+    """Save per-serving macros to Grocy recipe userfields."""
     if not (GROCY_URL and GROCY_API_KEY):
         return jsonify({'ok': False})
     data = request.json or {}
-    to_save = {k: round(float(data[k]), 2) for k in ('calories', 'protein', 'carbs', 'fat')
-               if data.get(k) is not None}
-    if not to_save:
-        return jsonify({'ok': False, 'reason': 'no values provided'})
-    _ensure_recipe_userfields()
+    to_save = {}
+    for k in ('calories', 'protein', 'carbs', 'fat'):
+        v = data.get(k)
+        if v is not None and str(v).strip() != '':
+            to_save[k] = round(float(v), 2)
+        else:
+            to_save[k] = None   # explicit null clears the field
     try:
         r = requests.put(f'{GROCY_URL}/api/userfields/recipes/{recipe_id}',
                          headers=grocy_headers(), json=to_save, timeout=5)
-        return jsonify({'ok': r.ok, 'saved': to_save})
+        return jsonify({'ok': r.ok})
+    except Exception as e:
+        return jsonify({'ok': False, 'error': str(e)})
+
+
+@app.route('/api/mp/all-recipe-nutrition')
+def mp_all_recipe_nutrition():
+    """Return all real recipes with their stored macro userfields."""
+    if not (GROCY_URL and GROCY_API_KEY):
+        return jsonify({'ok': False})
+    try:
+        r = requests.get(f'{GROCY_URL}/api/objects/recipes', headers=grocy_headers(), timeout=10)
+        if not r.ok:
+            return jsonify({'ok': False, 'reason': f'Grocy {r.status_code}'})
+        recipes = [rec for rec in (r.json() or []) if int(rec.get('id') or 0) > 0]
+        result = []
+        for rec in recipes:
+            rid = rec['id']
+            uf = {}
+            try:
+                uf_r = requests.get(f'{GROCY_URL}/api/userfields/recipes/{rid}',
+                                    headers=grocy_headers(), timeout=5)
+                if uf_r.ok:
+                    uf = uf_r.json() or {}
+            except Exception:
+                pass
+            result.append({
+                'id':            rid,
+                'name':          rec.get('name', ''),
+                'base_servings': float(rec.get('base_servings') or 1),
+                'calories':      uf.get('calories'),
+                'protein':       uf.get('protein'),
+                'carbs':         uf.get('carbs'),
+                'fat':           uf.get('fat'),
+            })
+        return jsonify({'ok': True, 'recipes': result})
     except Exception as e:
         return jsonify({'ok': False, 'error': str(e)})
 
@@ -1144,7 +1075,6 @@ def mp_recipe_nutrition_save(recipe_id):
 @app.route('/api/mp/grocy-week')
 def mp_grocy_week():
     """Return Grocy meal_plan entries for a week, enriched with local user/nutrition."""
-    _ensure_recipe_userfields()   # idempotent — runs once per process
     if not (GROCY_URL and GROCY_API_KEY):
         return jsonify({'ok': False, 'plans': [], 'sections': [], 'reason': 'Grocy not configured'})
     start = request.args.get('start', '')
